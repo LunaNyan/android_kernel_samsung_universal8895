@@ -62,17 +62,9 @@
 #define dbg_fls_itf(fmt, args...) \
 	dbg_sen_itf(fmt, ##args)
 
-/* static memory size for DDK/RTA backup data */
-#define STATIC_DATA_SIZE	100
-
 enum DIFF_BET_SEN_ISP { /* Set to 0: 3AA 3frame delay, 1: 3AA 4frame delay, 3: M2M */
 	DIFF_OTF_DELAY	= 0,
 	DIFF_M2M_DELAY	= 3
-};
-
-enum {
-	ITF_CTRL_ID_DDK = 0,
-	ITF_CTRL_ID_RTA = 1,
 };
 
 /* DEVICE SENSOR INTERFACE */
@@ -258,9 +250,6 @@ typedef struct {
 	/** Video Timing Pixel Clock, vt_pix_clk_freq. */
 	unsigned int pclk;
 	unsigned int min_frame_us_time;
-#ifdef CAMERA_REAR2
-	unsigned int min_sync_frame_us_time;
-#endif
 
 	/** Frame valid time */
 	unsigned int frame_valid_us_time;
@@ -331,9 +320,6 @@ typedef struct {
 	bool called_common_sensor_setting; /* [hc0105.kim, 2013/09/13] Added to avoid calling common sensor register setting again. */
 /* #ifdef C1_LSC_CHANGE // [ist.song 2014.08.19] Added to inform videomode to sensor. */
 	bool video_mode;
-#ifdef USE_NEW_PER_FRAME_CONTROL
-        unsigned int num_of_frame;
-#endif
 /* #endif */
 	unsigned int actuator_position;
 
@@ -394,13 +380,6 @@ struct fimc_is_cis_ops {
 #ifdef CONFIG_SENSOR_RETENTION_USE
 	int (*cis_retention_prepare)(struct v4l2_subdev *subdev);
 	int (*cis_retention_crc_check)(struct v4l2_subdev *subdev);
-#endif
-#ifdef USE_CAMERA_MIPI_CLOCK_VARIATION
-	int (*cis_update_settle_info)(struct v4l2_subdev *subdev);
-	int (*cis_update_mipi_index_info)(struct v4l2_subdev *subdev, u32 rat, u32 channel);
-#endif
-#ifdef USE_FACE_UNLOCK_AE_AWB_INIT
-	int (*cis_set_initial_exposure)(struct v4l2_subdev *subdev);
 #endif
 };
 
@@ -510,9 +489,6 @@ struct fimc_is_actuator_ops {
 	actuator_func_type actuator_get_status;
 	actuator_func_type actuator_set_pos;
 	actuator_func_type actuator_cal_data;
-#ifdef USE_AF_SLEEP_MODE
-	int (*set_active)(struct v4l2_subdev *subdev, int enable);
-#endif
 };
 
 /* for SetAlgResFlag API */
@@ -557,13 +533,6 @@ struct fimc_is_long_term_expo_mode {
 /* OIS */
 struct fimc_is_ois_ops {
 	int (*ois_init)(struct v4l2_subdev *subdev);
-#ifdef CONFIG_OIS_USE_RUMBA_S6
-	int (*ois_deinit)(struct v4l2_subdev *subdev);
-#endif
-#ifdef USE_OIS_SLEEP_MODE
-	int (*ois_start)(struct v4l2_subdev *subdev);
-	int (*ois_stop)(struct v4l2_subdev *subdev);
-#endif
 	int (*ois_set_mode)(struct v4l2_subdev *subdev, int mode);
 	int (*ois_shift_compensation)(struct v4l2_subdev *subdev, int position, int resolution);
 #ifdef CONFIG_OIS_DIRECT_FW_CONTROL
@@ -577,9 +546,8 @@ struct fimc_is_ois_ops {
 				int threshold, bool *x_result, bool *y_result, int *sin_x, int *sin_y);
 #ifdef CAMERA_REAR2_OIS
 	bool (*ois_auto_test_rear2)(struct fimc_is_core *core,
-				int threshold, bool *x_result, bool *y_result, int *sin_x, int *sin_y,
-				bool *x_result_2nd, bool *y_result_2nd, int *sin_x_2nd, int *sin_y_2nd);
-#endif
+				int threshold, bool *x_result, bool *y_result, int *sin_x, int *sin_y);	
+#endif		
 	bool (*ois_check_fw)(struct fimc_is_core *core);
 	void (*ois_enable)(struct fimc_is_core *core);
 	void (*ois_offset_test)(struct fimc_is_core *core, long *raw_data_x, long *raw_data_y);
@@ -589,7 +557,6 @@ struct fimc_is_ois_ops {
 	u8 (*ois_read_status)(struct fimc_is_core *core);
 	u8 (*ois_read_cal_checksum)(struct fimc_is_core *core);
 	int (*ois_set_coef)(struct v4l2_subdev *subdev, u8 coef);
-	int (*ois_read_fw_ver)(char *name, char *ver);
 };
 
 struct fimc_is_sensor_interface;
@@ -716,16 +683,6 @@ struct fimc_is_cis_interface_ops {
 	int (*set_initial_exposure_of_setfile)(struct fimc_is_sensor_interface *itf,
 				u32 expo);
 
-#ifdef USE_NEW_PER_FRAME_CONTROL
-	int (*reserved0)(struct fimc_is_sensor_interface *itf,
-				bool reserved0);
-
-	int (*set_num_of_frame_per_one_3aa)(struct fimc_is_sensor_interface *itf,
-				u32 *num_of_frame);
-
-	int (*reserved1)(struct fimc_is_sensor_interface *itf,
-				u32 *reserved1);
-#else
 	int (*set_video_mode_of_setfile)(struct fimc_is_sensor_interface *itf,
 				bool video_mode);
 
@@ -734,7 +691,7 @@ struct fimc_is_cis_interface_ops {
 
 	int (*get_offset_from_cur_result)(struct fimc_is_sensor_interface *itf,
 				u32 *offset);
-#endif
+
 	int (*set_cur_uctl_list)(struct fimc_is_sensor_interface *itf);
 
 	int (*apply_sensor_setting)(struct fimc_is_sensor_interface *itf);
@@ -776,16 +733,6 @@ struct fimc_is_cis_interface_ops {
 	/* Set sensor 3a mode - OTF/M2M */
 	int (*set_sensor_3a_mode)(struct fimc_is_sensor_interface *itf,
 					u32 mode);
-
-#ifdef USE_FACE_UNLOCK_AE_AWB_INIT
-	int (*get_initial_exposure_gain_of_sensor)(struct fimc_is_sensor_interface *itf,
-			u32 *long_expo,
-			u32 *long_again,
-			u32 *long_dgain,
-			u32 *short_expo,
-			u32 *short_again,
-			u32 *short_dgain);
-#endif
 };
 
 struct fimc_is_cis_ext_interface_ops {
@@ -807,8 +754,7 @@ struct fimc_is_cis_ext_interface_ops {
 struct fimc_is_cis_ext2_interface_ops {
 	int (*set_long_term_expo_mode)(struct fimc_is_sensor_interface *itf,
 				struct fimc_is_long_term_expo_mode *long_term_expo_mode);
-	int (*get_static_mem)(int ctrl_id, void **mem, int *size);
-	void *reserved[19];
+	void *reserved[20];
 };
 
 struct fimc_is_cis_event_ops {
@@ -943,15 +889,6 @@ struct fimc_is_csi_interface_ops {
 	int (*reserved[4])(struct fimc_is_sensor_interface *itf);
 };
 
-struct fimc_is_dual_interface_ops {
-        int (*get_sensor_state)(struct fimc_is_sensor_interface *itf);
-        int (*get_reuse_3a_state)(struct fimc_is_sensor_interface *itf,
-                        u32 *position, u32 *ae_exposure, u32 *ae_deltaev, bool is_clear);
-        int (*set_reuse_ae_exposure)(struct fimc_is_sensor_interface *itf,
-                        u32 ae_exposure, u32 ae_deltaev);
-        int (*reserved[2])(struct fimc_is_sensor_interface *itf);
-};
-
 struct fimc_is_sensor_interface {
 	u32					magic;
 	struct fimc_is_cis_interface_ops	cis_itf_ops;
@@ -978,8 +915,6 @@ struct fimc_is_sensor_interface {
 	struct fimc_is_csi_interface_ops	csi_itf_ops;
 	/* Add interface for LTE mode */
 	struct fimc_is_cis_ext2_interface_ops	cis_ext2_itf_ops;
-	/* Add interface for DUAL scenario */
-	struct fimc_is_dual_interface_ops	dual_itf_ops;
 };
 
 int init_sensor_interface(struct fimc_is_sensor_interface *itf);

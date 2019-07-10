@@ -27,8 +27,6 @@ bool check_dma_done(struct fimc_is_hw_ip *hw_ip, u32 instance_id, u32 fcount)
 	int wq_id0 = WORK_MAX_MAP, wq_id1 = WORK_MAX_MAP;
 	int output_id0 = ENTRY_END, output_id1 = ENTRY_END;
 	u32 hw_fcount;
-	bool flag_get_meta = true;
-	ulong flags = 0;
 
 	BUG_ON(!hw_ip);
 
@@ -37,28 +35,28 @@ bool check_dma_done(struct fimc_is_hw_ip *hw_ip, u32 instance_id, u32 fcount)
 
 	BUG_ON(!framemgr);
 
-	framemgr_e_barrier_common(framemgr, 0, flags);
+	framemgr_e_barrier(framemgr, 0);
 	frame = peek_frame(framemgr, FS_HW_WAIT_DONE);
-	framemgr_x_barrier_common(framemgr, 0, flags);
+	framemgr_x_barrier(framemgr, 0);
 
 	if (frame == NULL) {
 flush_config_frame:
-		framemgr_e_barrier_common(framemgr, 0, flags);
+		framemgr_e_barrier(framemgr, 0);
 		frame = peek_frame(framemgr, FS_HW_CONFIGURE);
 		if (frame) {
 			if (unlikely(frame->fcount + frame->cur_buf_index < hw_fcount)) {
 				trans_frame(framemgr, frame, FS_HW_WAIT_DONE);
-				framemgr_x_barrier_common(framemgr, 0, flags);
+				framemgr_x_barrier(framemgr, 0);
 				fimc_is_hardware_frame_ndone(hw_ip, frame, frame->instance, IS_SHOT_INVALID_FRAMENUMBER);
 				goto flush_config_frame;
 			} else if (unlikely(frame->fcount + frame->cur_buf_index == hw_fcount)) {
 				trans_frame(framemgr, frame, FS_HW_WAIT_DONE);
-				framemgr_x_barrier_common(framemgr, 0, flags);
+				framemgr_x_barrier(framemgr, 0);
 				fimc_is_hardware_frame_ndone(hw_ip, frame, frame->instance, IS_SHOT_INVALID_FRAMENUMBER);
 				return true;
 			}
 		}
-		framemgr_x_barrier_common(framemgr, 0, flags);
+		framemgr_x_barrier(framemgr, 0);
 		err_hw("[ID:%d][F:%d,HWF:%d]check_dma_done: frame(null)!!", hw_ip->id, fcount, hw_fcount);
 		return true;
 	}
@@ -76,29 +74,29 @@ flush_config_frame:
 
 	if (((frame->num_buffers > 1) && (expected_fcount != frame->fcount))
 		|| ((frame->num_buffers == 1) && (expected_fcount != (frame->fcount + frame->cur_buf_index)))) {
-		framemgr_e_barrier_common(framemgr, 0, flags);
+		framemgr_e_barrier(framemgr, 0);
 		list_frame = find_frame(framemgr, FS_HW_WAIT_DONE, frame_fcount,
 					(void *)(ulong)expected_fcount);
-		framemgr_x_barrier_common(framemgr, 0, flags);
+		framemgr_x_barrier(framemgr, 0);
 		if (list_frame == NULL) {
 			warn_hw("[ID:%d]queued_count(%d) [ddk:%d,exp:%d,hw:%d] invalid frame(F:%d,idx:%d)", hw_ip->id,
 				framemgr->queued_count[FS_HW_WAIT_DONE],
 				fcount, expected_fcount, hw_fcount,
 				frame->fcount, frame->cur_buf_index);
 flush_wait_done_frame:
-			framemgr_e_barrier_common(framemgr, 0, flags);
+			framemgr_e_barrier(framemgr, 0);
 			frame = peek_frame(framemgr, FS_HW_WAIT_DONE);
 			if (frame) {
 				if (unlikely(frame->fcount < expected_fcount)) {
-					framemgr_x_barrier_common(framemgr, 0, flags);
+					framemgr_x_barrier(framemgr, 0);
 					fimc_is_hardware_frame_ndone(hw_ip, frame, frame->instance, IS_SHOT_INVALID_FRAMENUMBER);
 					goto flush_wait_done_frame;
 				}
 			} else {
-				framemgr_x_barrier_common(framemgr, 0, flags);
+				framemgr_x_barrier(framemgr, 0);
 				return true;
 			}
-			framemgr_x_barrier_common(framemgr, 0, flags);
+			framemgr_x_barrier(framemgr, 0);
 		} else {
 			frame = list_frame;
 		}
@@ -147,18 +145,16 @@ flush_wait_done_frame:
 		dbg_hw("[ID:%d][F:%d]output_id[0x%x],wq_id[0x%x]\n",
 			hw_ip->id, frame->fcount, output_id0, wq_id0);
 		fimc_is_hardware_frame_done(hw_ip, NULL, wq_id0, output_id0,
-			IS_SHOT_SUCCESS, flag_get_meta);
+			IS_SHOT_SUCCESS);
 		ret = true;
-		flag_get_meta = false;
 	}
 
 	if (test_bit(output_id1, &frame->out_flag)) {
 		dbg_hw("[ID:%d][F:%d]output_id[0x%x],wq_id[0x%x]\n",
 			hw_ip->id, frame->fcount, output_id1, wq_id1);
 		fimc_is_hardware_frame_done(hw_ip, NULL, wq_id1, output_id1,
-			IS_SHOT_SUCCESS, flag_get_meta);
+			IS_SHOT_SUCCESS);
 		ret = true;
-		flag_get_meta = false;
 	}
 
 	return ret;
@@ -169,8 +165,8 @@ static void fimc_is_lib_io_callback(void *this, enum lib_cb_event_type event_id,
 {
 	struct fimc_is_hardware *hardware;
 	struct fimc_is_hw_ip *hw_ip;
-	int wq_id = WORK_MAX_MAP;
-	int output_id = ENTRY_END;
+	int wq_id = 0;
+	int output_id = 0;
 	u32 hw_fcount, index;
 
 	BUG_ON(!this);
@@ -214,10 +210,8 @@ static void fimc_is_lib_io_callback(void *this, enum lib_cb_event_type event_id,
 			break;
 		}
 #endif
-
-		if (wq_id != WORK_MAX_MAP)
-			fimc_is_hardware_frame_done(hw_ip, NULL, wq_id,
-					output_id, IS_SHOT_SUCCESS, true);
+		fimc_is_hardware_frame_done(hw_ip, NULL, wq_id, output_id,
+			IS_SHOT_SUCCESS);
 		break;
 	case LIB_EVENT_DMA_B_OUT_DONE:
 		if (!atomic_read(&hardware->streaming[hardware->sensor_position[instance_id]]))
@@ -247,9 +241,8 @@ static void fimc_is_lib_io_callback(void *this, enum lib_cb_event_type event_id,
 			break;
 		}
 
-		if (wq_id != WORK_MAX_MAP)
-			fimc_is_hardware_frame_done(hw_ip, NULL, wq_id,
-					output_id, IS_SHOT_SUCCESS, true);
+		fimc_is_hardware_frame_done(hw_ip, NULL, wq_id, output_id,
+			IS_SHOT_SUCCESS);
 		break;
 	case LIB_EVENT_ERROR_CIN_OVERFLOW:
 		bcm_stop(NULL);
@@ -348,7 +341,7 @@ static void fimc_is_lib_camera_callback(void *this, enum lib_cb_event_type event
 
 		if (!ret) {
 			fimc_is_hardware_frame_done(hw_ip, NULL, -1, FIMC_IS_HW_CORE_END,
-				IS_SHOT_SUCCESS, true);
+				IS_SHOT_SUCCESS);
 		}
 		atomic_set(&hw_ip->status.Vvalid, V_BLANK);
 		wake_up(&hw_ip->status.wait_queue);
@@ -550,11 +543,7 @@ void fimc_is_lib_isp_object_destroy(struct fimc_is_hw_ip *hw_ip,
 	BUG_ON(!hw_ip);
 	BUG_ON(!this);
 	BUG_ON(!this->func);
-
-	if (!this->object) {
-		err_lib("object(NULL) destroy fail (%d)", hw_ip->id);
-		return;
-	}
+	BUG_ON(!this->object);
 
 	ret = CALL_LIBOP(this, object_destroy, this->object, instance_id);
 	if (ret) {
@@ -742,15 +731,12 @@ void fimc_is_lib_isp_stop(struct fimc_is_hw_ip *hw_ip,
 	BUG_ON(!this->func);
 	BUG_ON(!this->object);
 
-	info_lib("[%d][ID:%d] try to suspend ddk object...", instance_id, hw_ip->id);
-
 	ret = CALL_LIBOP(this, stop, this->object, instance_id);
 	if (ret) {
-		pr_cont(" failed! (%d)\n", ret);
+		err_lib("object_suspend fail (%d)", hw_ip->id);
 		return;
 	}
-
-	pr_cont(" done!\n");
+	info_lib("[%d]object_suspend done [ID:%d]\n", instance_id, hw_ip->id);
 
 	return;
 }

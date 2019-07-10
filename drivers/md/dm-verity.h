@@ -18,8 +18,6 @@
 
 #define DM_VERITY_MAX_LEVELS		63
 
-#define IO_RETRY_MAX			2
-
 enum verity_mode {
 	DM_VERITY_MODE_EIO,
 	DM_VERITY_MODE_LOGGING,
@@ -65,9 +63,6 @@ struct dm_verity {
 	sector_t hash_level_block[DM_VERITY_MAX_LEVELS];
 
 	struct dm_verity_fec *fec;	/* forward error correction */
-#ifdef DMV_ALTA
-	u8 *verity_bitmap; /* bitmap for skipping verification on blocks */
-#endif
 };
 
 struct dm_verity_io {
@@ -82,7 +77,6 @@ struct dm_verity_io {
 	struct bvec_iter iter;
 
 	struct work_struct work;
-	int io_retry;
 
 	/*
 	 * Three variably-size fields follow this struct:
@@ -131,15 +125,5 @@ extern int verity_hash(struct dm_verity *v, struct shash_desc *desc,
 
 extern int verity_hash_for_block(struct dm_verity *v, struct dm_verity_io *io,
 				 sector_t block, u8 *digest, bool *is_zero);
-extern void verity_status(struct dm_target *ti, status_type_t type,
-			unsigned status_flags, char *result, unsigned maxlen);
-extern int verity_prepare_ioctl(struct dm_target *ti,
-                struct block_device **bdev, fmode_t *mode);
-extern int verity_iterate_devices(struct dm_target *ti,
-				iterate_devices_callout_fn fn, void *data);
-extern void verity_io_hints(struct dm_target *ti, struct queue_limits *limits);
-extern void verity_dtr(struct dm_target *ti);
-extern int verity_ctr(struct dm_target *ti, unsigned argc, char **argv);
-extern int verity_map(struct dm_target *ti, struct bio *bio);
-extern void dm_verity_avb_error_handler(void);
+
 #endif /* DM_VERITY_H */

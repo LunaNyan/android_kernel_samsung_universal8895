@@ -148,7 +148,7 @@ static int p3_suspend(void)
 	if (ret)
 		P3_ERR_MSG("P3 check suspend status! 0x%X\n", ret);
 
-	return ret;
+	return 0;
 }
 
 static int p3_resume(void)
@@ -162,7 +162,7 @@ static int p3_resume(void)
 	if (ret)
 		P3_ERR_MSG("P3 check resume status! 0x%X\n", ret);
 
-	return ret;
+	return 0;
 }
 
 static int p3_clk_control(struct p3_data *data, bool onoff)
@@ -440,7 +440,6 @@ static int spip3_release(struct inode *inode, struct file *filp)
 #ifdef CONFIG_ESE_SECURE
 	p3_clk_control(p3_dev, false);
 	p3_suspend();
-	usleep_range(1000, 1000);
 #else
 	p3_pinctrl_config(p3_dev->p3_device.parent, false);
 #endif
@@ -635,13 +634,6 @@ static int spip3_probe(struct spi_device *spi)
 
 	P3_INFO_MSG("%s chip select : %d , bus number = %d\n",
 		__func__, spi->chip_select, spi->master->bus_num);
-
-#ifdef CONFIG_ESE_SECURE
-	if (p3_suspend() == EBUSY) {
-		P3_ERR_MSG("eSE spi Secure fail!\n"); 
-		return -EBUSY;
-	}
-#endif
 
 	data = kzalloc(sizeof(*data), GFP_KERNEL);
 	if (data == NULL) {

@@ -35,7 +35,7 @@ static int __init exynos_protect_kernel_text(void)
 								__func__);
 		return -1;
 	}
-#ifdef CONFIG_RKP
+#ifdef CONFIG_TIMA_RKP
 	ktext_end_va = kallsyms_lookup_name("rkp_pgt_bitmap");
 #else
 	ktext_end_va = kallsyms_lookup_name("_etext");
@@ -105,7 +105,7 @@ static int  __init exynos_set_debug_mem(void)
 	__dma_flush_range(smc_debug_mem, smc_debug_mem+PAGE_SIZE);
 
 	phys = (char *)virt_to_phys(smc_debug_mem);
-	pr_err("%s: alloc kmem for smc_dbg virt: 0x%pK phys: 0x%pK size: %ld.\n",
+	pr_err("%s: alloc kmem for smc_dbg virt: 0x%p phys: 0x%p size: %ld.\n",
 			__func__, smc_debug_mem, phys, PAGE_SIZE);
 	ret = exynos_smc(SMC_CMD_SET_DEBUG_MEM, (u64)phys, (u64)PAGE_SIZE, 0);
 

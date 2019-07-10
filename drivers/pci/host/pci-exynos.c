@@ -402,13 +402,6 @@ static int exynos_pcie_clock_enable(struct pcie_port *pp, int enable)
 	if (enable) {
 		for (i = 0; i < exynos_pcie->pcie_clk_num; i++)
 			ret = clk_prepare_enable(clks->pcie_clks[i]);
-		if(ret) {
-			dev_err(pp->dev, "pcie clock[%d] enable error!!! ret=%d\n", i, ret);
-#ifdef CONFIG_SEC_PANIC_PCIE_ERR
-			dev_err(pp->dev, "%s: [Case#2] PCIe clk fail!\n",__func__);
-			BUG_ON(1);
-#endif
-		}
 	} else {
 		for (i = 0; i < exynos_pcie->pcie_clk_num; i++)
 			clk_disable_unprepare(clks->pcie_clks[i]);
@@ -427,13 +420,6 @@ static int exynos_pcie_phy_clock_enable(struct pcie_port *pp, int enable)
 	if (enable) {
 		for (i = 0; i < exynos_pcie->phy_clk_num; i++)
 			ret = clk_prepare_enable(clks->phy_clks[i]);
-		if (ret) {
-			dev_err(pp->dev, "pcie phy clock[%d] enable error!!! ret=%d\n", i, ret);
-#ifdef CONFIG_SEC_PANIC_PCIE_ERR
-			dev_err(pp->dev, "%s: [Case#2] PCIe phy clk fail!\n",__func__);
-			BUG_ON(1);
-#endif
-		}
 	} else {
 		for (i = 0; i < exynos_pcie->phy_clk_num; i++)
 			clk_disable_unprepare(clks->phy_clks[i]);
@@ -483,7 +469,7 @@ static void exynos_pcie_setup_rc(struct pcie_port *pp)
 	exynos_pcie_wr_own_conf(pp, PCIE_AUX_CLK_FREQ_OFF, 4, PCIE_AUX_CLK_FREQ_26MHZ);
 
 	/* set duration of L1.2 & L1.2.Entry */
-	exynos_pcie_wr_own_conf(pp, PCIE_L1_SUBSTATES_OFF, 4, PCIE_L1_SUB_VAL);
+	exynos_pcie_wr_own_conf(pp, PCIE_L1_SUBSTATES_OFF, 4, 0xD2);
 
 	/* clear power management control and status register */
 	exynos_pcie_wr_own_conf(pp, pm_cap_off + PCI_PM_CTRL, 4, 0x0);
@@ -673,14 +659,9 @@ retry:
 			goto retry;
 		} else {
 			exynos_pcie_print_link_history(pp);
-
-#ifdef CONFIG_SEC_PANIC_PCIE_ERR
-			dev_info(dev, "%s: [Case#1] PCIe link fail\n",__func__);
-#else
 			if ((exynos_pcie->ip_ver >= 0x889000) && (exynos_pcie->ch_num == 0)) {
 				return -EPIPE;
 			}
-#endif
 			BUG_ON(1);
 			return -EPIPE;
 		}
@@ -809,10 +790,6 @@ static irqreturn_t exynos_pcie_irq_handler(int irq, void *arg)
 		exynos_pcie_dump_link_down_status(exynos_pcie->ch_num);
 		exynos_pcie_register_dump(exynos_pcie->ch_num);
 		queue_work(exynos_pcie->pcie_wq, &exynos_pcie->work.work);
-#ifdef CONFIG_SEC_PANIC_PCIE_ERR
-		dev_info(pp->dev, "%s: [Case#4] PCIe link down occured\n",__func__);
-		BUG_ON(1);
-#endif
 	}
 #ifdef CONFIG_PCI_MSI
 	if (val & IRQ_MSI_RISING_ASSERT && exynos_pcie->use_msi)
@@ -1531,11 +1508,9 @@ void exynos_pcie_config_l1ss(struct pcie_port *pp)
 		exynos_pcie_wr_own_conf(pp, PCIE_LINK_L1SS_CONTROL, 4, val);
 		exynos_pcie_wr_own_conf(pp, PCIE_LINK_L1SS_CONTROL2, 4,
 				PORT_LINK_TPOWERON_130US);
-		/*
 		val = PORT_LINK_L1SS_T_PCLKACK | PORT_LINK_L1SS_T_L1_2 |
 			PORT_LINK_L1SS_T_POWER_OFF;
-		*/
-		exynos_pcie_wr_own_conf(pp, PCIE_L1_SUBSTATES_OFF, 4, PCIE_L1_SUB_VAL);
+		exynos_pcie_wr_own_conf(pp, PCIE_LINK_L1SS_OFF, 4, val);
 
 		exynos_pcie_rd_own_conf(pp, exp_cap_off + PCI_EXP_LNKCTL, 4, &val);
 		val &= ~PCI_EXP_LNKCTL_ASPMC;
@@ -1807,13 +1782,8 @@ void exynos_pcie_send_pme_turn_off(struct exynos_pcie *exynos_pcie)
 		count++;
 	} while (count < MAX_TIMEOUT);
 
-	if (count >= MAX_TIMEOUT) {
+	if (count >= MAX_TIMEOUT)
 		dev_err(dev, "cannot receive L23_READY DLLP packet\n");
-#ifdef CONFIG_SEC_PANIC_PCIE_ERR
-		dev_err(dev, "%s: [Case#5] PCIe : PM_Enter_L23 is NOT received\n",__func__);
-		BUG_ON(1);
-#endif
-	}
 
 	exynos_elb_writel(exynos_pcie, 0x1, PCIE_APP_REQ_EXIT_L1);
 	val = exynos_elb_readl(exynos_pcie, PCIE_APP_REQ_EXIT_L1_MODE);

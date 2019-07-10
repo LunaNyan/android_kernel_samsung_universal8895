@@ -31,7 +31,6 @@
 #include <linux/regulator/consumer.h>
 #include <linux/workqueue.h>
 
-
 #include <linux/io.h>
 #include <linux/usb/otg-fsm.h>
 
@@ -127,8 +126,6 @@ static const char *dwc3_exynos8890_clk_names[] = {"aclk", "sclk",
 				"phyclock", "pipe_pclk", NULL};
 static const char *dwc2_exynos8890_clk_names[] = {"aclk", "sclk",
 				"phyclock", "phy_ref", NULL};
-extern struct atomic_notifier_head hardlockup_notifier_list;
-bool lockup_noti;
 
 static int dwc3_exynos_clk_get(struct dwc3_exynos *exynos)
 {
@@ -466,23 +463,12 @@ static int dwc3_exynos_remove_child(struct device *dev, void *unused)
 	return 0;
 }
 
-static int dwc3_usb_hardlockup_handler (struct notifier_block *nb,
-					unsigned long l, void *P)
-{
-	pr_err("%s: occured hardlockup\n", __func__);
-	lockup_noti = true;
-	return 0;
-}
-
-static struct notifier_block nb_hardlockup_block = {
-		    .notifier_call = dwc3_usb_hardlockup_handler,
-};
-
 static int dwc3_exynos_probe(struct platform_device *pdev)
 {
 	struct dwc3_exynos	*exynos;
 	struct device		*dev = &pdev->dev;
 	struct device_node	*node = dev->of_node;
+
 	int			ret;
 
 	dev_info(dev, "%s: +\n", __func__);
@@ -566,33 +552,21 @@ static int dwc3_exynos_probe(struct platform_device *pdev)
 		}
 	}
 
-	ret = dwc3_exynos_register_phys(exynos);
-	if (ret) {
-		dev_err(dev, "couldn't register PHYs\n");
-		goto err4;
-	}
-
 	if (node) {
 		ret = of_platform_populate(node, NULL, NULL, dev);
 		if (ret) {
 			dev_err(dev, "failed to add dwc3 core\n");
-			goto err5;
+			goto err4;
 		}
 	} else {
 		dev_err(dev, "no device node, failed to add dwc3 core\n");
 		ret = -ENODEV;
-		goto err5;
+		goto err4;
 	}
-
-	lockup_noti = false;
-	atomic_notifier_chain_register(&hardlockup_notifier_list, &nb_hardlockup_block);
 
 	dev_info(dev, "%s: -\n", __func__);
 	return 0;
 
-err5:
-	platform_device_unregister(exynos->usb2_phy);
-	platform_device_unregister(exynos->usb3_phy);
 err4:
 	if (exynos->vdd10)
 		regulator_disable(exynos->vdd10);

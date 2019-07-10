@@ -36,16 +36,16 @@
 	pinctrl-0 = <&initial3>;
 	pinctrl-1 = <&sleep3>;
 	initial3: initial-state {
-		PIN_IN(gpi1-2, DOWN, LV1);	/* OLED ID */
+	    	PIN_IN(gpi1-2, DOWN, LV1);	/* OLED ID */
 		PIN_OUT(gpi1-3, LV3);		/* eDP_SW_OE */
 		PIN_OUT(gpi1-6, LV1);		/* S2MM005_OM */
 		PIN_IN(gpi1-7, UP, LV1);	/* USB3.1_COM_SEL */
 	  };
 	sleep3:sleep-state {
-		PIN_SLP(gpi0-2, INPUT, DOWN);	/* NC */
+		PIN_SLP(gpi0-2, INPUT, DOWN);	/* NC */	
 		PIN_SLP(gpi1-0, PREV, NONE);	/* LCD_RESET */
 		PIN_SLP(gpi1-1, PREV, NONE);	/* DISP_DET */
-		PIN_SLP(gpi1-2, INPUT, DOWN);	/* OLED ID */
+        	PIN_SLP(gpi1-2, INPUT, DOWN);	/* OLED ID */
 		PIN_SLP(gpi1-3, PREV, NONE);	/* eDP_SW_OE */
 		PIN_SLP(gpi1-4, INPUT, NONE);	/* IFC_SENSE_INT_AP */
 		PIN_SLP(gpi1-5, INPUT, NONE);   /* MCU_AP_INT_1P8 */
@@ -172,7 +172,7 @@
 };
 
 // GPB0
-// GPC0 GPC1 GPC2 GPC3
+// GPC0 GPC1 GPC2 GPC3    
 // GPK0
 // GPE1 GPE2 GPE3 GPE4 GPE5 GPE6
 // GPF0
@@ -209,8 +209,8 @@
 		PIN_SLP(gpb0-1, PREV, NONE);    /* DISP_TE */
 		PIN_SLP(gpb0-2, INPUT, DOWN);	/* NC */
 		PIN_SLP(gpc0-0, INPUT, DOWN);	/* COMP_PAF_INT */
-		PIN_SLP(gpc0-1, PREV, DOWN);	/* CAM_FLASH_EN */
-		PIN_SLP(gpc0-2, PREV, DOWN);	/* CAM_TORCH_EN */
+		PIN_SLP(gpc0-1, INPUT, DOWN);	/* CAM_FLASH_EN */
+		PIN_SLP(gpc0-2, INPUT, DOWN);	/* CAM_TORCH_EN */
 		PIN_SLP(gpc0-3, INPUT, DOWN);	/* VTCAM_RST_N */
 		PIN_SLP(gpc0-4, INPUT, DOWN);	/* CAM_RST_N */
 		PIN_SLP(gpc1-0, INPUT, DOWN);	/* NC */
@@ -251,7 +251,7 @@
 		PIN_SLP(gpe2-2, INPUT, DOWN);	/* NC */
 		PIN_SLP(gpe2-3, INPUT, DOWN);	/* NC */
 		PIN_SLP(gpe2-4, INPUT, DOWN);   /* SHUB_SPI_MISO */
-		PIN_SLP(gpe2-5, OUT1, UP);	/* SHUB_SPI_MOSI */
+		PIN_SLP(gpe2-5, OUT1, UP);   	/* SHUB_SPI_MOSI */
 		PIN_SLP(gpe2-6, OUT1, UP);      /* SHUB_SPI_SS_N */
 		PIN_SLP(gpe2-7, INPUT, DOWN);    /* SHUB_SPI_SCK */
 		PIN_SLP(gpe3-4, INPUT, NONE);	/* SUB_PMIC_SDA_1P8 */
@@ -266,10 +266,10 @@
 		PIN_SLP(gpe4-5, INPUT, NONE);	/* MFC_SCL_1P8 */
 		PIN_SLP(gpe4-6, INPUT, NONE);	/* CC_SDA_1P8 */
 		PIN_SLP(gpe4-7, INPUT, NONE);	/* CC_SCL_1P8 */
-		PIN_SLP(gpe5-0, INPUT, DOWN);	/* COPR_MISO */
-		PIN_SLP(gpe5-1, INPUT, DOWN);	/* COPR_MOSI */
-		PIN_SLP(gpe5-2, INPUT, DOWN);	/* COPR_SS */
-		PIN_SLP(gpe5-3, INPUT, DOWN);	/* COPR_SCLK */
+		PIN_SLP(gpe5-0, INPUT, DOWN);	/* COPR_MISO */		
+        	PIN_SLP(gpe5-1, INPUT, DOWN);	/* COPR_MOSI */        
+        	PIN_SLP(gpe5-2, INPUT, DOWN);	/* COPR_SS */
+        	PIN_SLP(gpe5-3, INPUT, DOWN);	/* COPR_SCLK */
 		PIN_SLP(gpe5-4, INPUT, NONE);	/* WLAN_UART_RXD_DBG */
 		PIN_SLP(gpe5-5, INPUT, NONE);	/* WLAN_UART_TXD_DBG */
 		PIN_SLP(gpe5-6, INPUT, NONE);	/* IF_PMIC_SDA */
@@ -277,11 +277,11 @@
 		PIN_SLP(gpe3-0, PREV, NONE);    /* TSP_SDA */
 		PIN_SLP(gpe3-1, PREV, NONE);    /* TSP_SCL */
 		PIN_SLP(gpe6-0, INPUT, DOWN);	/* NC */
-		PIN_SLP(gpe6-1, OUT0, NONE);    /* AP_MCU_INT_1P8 */
+		PIN_SLP(gpe6-1, OUT0, NONE);    /* AP_MCU_INT_1P8 */ 
 		PIN_SLP(gpe6-3, INPUT, DOWN);	/* NC */
 		PIN_SLP(gpe6-4, OUT0, NONE);    /* NFC_FIRM */
 		PIN_SLP(gpe6-5, INPUT, NONE);	/* TSP_ICID */
-		PIN_SLP(gpe6-6, INPUT, NONE);	/* HRM_INT */
+		PIN_SLP(gpe6-6, INPUT, NONE);	/* HRM_INT */	
 		PIN_SLP(gpe6-7, INPUT, DOWN);    /* DISP_TE -> NC */
 		PIN_SLP(gpf0-0, PREV, DOWN);	/* MST_PWR_EN */
 		PIN_SLP(gpg0-1, INPUT, DOWN);	/* NC */

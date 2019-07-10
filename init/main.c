@@ -21,7 +21,7 @@
 #include <linux/ctype.h>
 #include <linux/delay.h>
 #include <linux/ioport.h>
-#include <linux/init.h>
+#include <linux/init.h> 
 #include <linux/initrd.h>
 #include <linux/bootmem.h>
 #include <linux/acpi.h>
@@ -81,7 +81,6 @@
 #include <linux/integrity.h>
 #include <linux/proc_ns.h>
 #include <linux/io.h>
-#include <linux/kaiser.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -92,10 +91,10 @@
 #ifdef CONFIG_SEC_EXT
 #include <linux/sec_ext.h>
 #endif
-#ifdef CONFIG_RKP
+#ifdef CONFIG_TIMA_RKP
 #include <linux/vmm.h>
-#include <linux/rkp.h> 
-#endif //CONFIG_RKP
+#include <linux/rkp_entry.h> 
+#endif //CONFIG_TIMA_RKP
 #ifdef CONFIG_RELOCATABLE_KERNEL
 #include <linux/memblock.h>
 #endif
@@ -104,11 +103,19 @@ static int kernel_init(void *);
 extern void init_IRQ(void);
 extern void fork_init(void);
 extern void radix_tree_init(void);
-
-#ifdef CONFIG_RKP
-extern struct vm_struct *vmlist;
+#ifndef CONFIG_DEBUG_RODATA
+static inline void mark_rodata_ro(void) { }
 #endif
 
+#ifdef CONFIG_KNOX_KAP
+int boot_mode_security;
+EXPORT_SYMBOL(boot_mode_security);
+#endif
+
+#ifdef CONFIG_TIMA_RKP
+int rkp_support_large_memory;
+EXPORT_SYMBOL(rkp_support_large_memory);
+#endif
 /*
  * Debug helper: via this flag we know that we are in 'early bootup code'
  * where only the boot processor is running with IRQ disabled.  This means
@@ -161,8 +168,6 @@ EXPORT_SYMBOL_GPL(static_key_initialized);
  */
 unsigned int reset_devices;
 EXPORT_SYMBOL(reset_devices);
-
-int ddr_start_type = 0;
 
 static int __init set_reset_devices(char *str)
 {
@@ -527,7 +532,7 @@ void __init __weak smp_setup_processor_id(void)
 }
 
 # if THREAD_SIZE >= PAGE_SIZE
-void __init __weak thread_stack_cache_init(void)
+void __init __weak thread_info_cache_init(void)
 {
 }
 #endif
@@ -548,9 +553,8 @@ static void __init mm_init(void)
 	pgtable_init();
 	vmalloc_init();
 	ioremap_huge_init();
-	kaiser_init();
 }
-#ifdef CONFIG_RKP
+#ifdef	CONFIG_TIMA_RKP
 
 #ifdef CONFIG_RKP_6G
 __attribute__((section(".rkp.bitmap"))) u8 rkp_pgt_bitmap_arr[0x30000] = {0};
@@ -561,52 +565,40 @@ __attribute__((section(".rkp.dblmap"))) u8 rkp_map_bitmap_arr[0x20000] = {0};
 #endif
 
 u8 rkp_started = 0;
-
-static void __init rkp_init(void)
+extern void* vmm_extra_mem ;
+static void rkp_init(void)
 {
 	rkp_init_t init;
-	struct vm_struct *p;
-
 	init.magic = RKP_INIT_MAGIC;
-	init.vmalloc_start = (u64)VMALLOC_START;
-	//init.vmalloc_end = (u64)high_memory;
-	init.vmalloc_end = (u64)VMALLOC_END;
-	printk("in rkp_init, swapper_pg_dir : %llx\n", (unsigned long long)swapper_pg_dir);
+	init.vmalloc_start = VMALLOC_START;
+	init.vmalloc_end = (u64)high_memory;
 	init.init_mm_pgd = (u64)__pa(swapper_pg_dir);
 	init.id_map_pgd = (u64)__pa(idmap_pg_dir);
-	init.zero_pg_addr = __pa(empty_zero_page);
-#ifdef CONFIG_UNMAP_KERNEL_AT_EL0
-	init.tramp_pgd = __pa(tramp_pg_dir);
-#endif
 	init.rkp_pgt_bitmap = (u64)__pa(rkp_pgt_bitmap);
-	init.rkp_dbl_bitmap = (u64)__pa(rkp_map_bitmap);
-	init.rkp_bitmap_size = RKP_PGT_BITMAP_LEN;
+	init.rkp_map_bitmap = (u64)__pa(rkp_map_bitmap);
+	init.rkp_pgt_bitmap_size = RKP_PGT_BITMAP_LEN;
+	init.zero_pg_addr = page_to_phys(empty_zero_page);
 	init._text = (u64) _text;
 	init._etext = (u64) _etext;
-	init.extra_memory_addr = RKP_EXTRA_MEM_START;
-	init.extra_memory_size = RKP_EXTRA_MEM_SIZE;
+
+	if (!vmm_extra_mem) {
+		printk(KERN_ERR"Disable RKP: Failed to allocate extra mem\n");
+		return;
+	}
+	init.extra_memory_addr = __pa(vmm_extra_mem);
+	init.extra_memory_size = 0x600000;
 	init._srodata = (u64) __start_rodata;
 	init._erodata =(u64) __end_rodata;
-	init.large_memory = 0;
-	//init.fimc_phys_addr = (u64)page_to_phys(vmalloc_to_page((void *)FIMC_LIB_START_VA));
-	init.fimc_phys_addr = 0;
-	for (p = vmlist; p; p = p->next) {
-		if (p->addr == (void *)FIMC_LIB_START_VA) {
-			init.fimc_phys_addr = (u64)(p->phys_addr);
-			break;
-		}
-	}
-	init.fimc_size = FIMC_LIB_SIZE;
+	init.large_memory = rkp_support_large_memory;
 
-	rkp_call(RKP_INIT, (u64)&init, (u64)kimage_voffset, 0, 0, 0);
-	//rkp_call(RKP_INIT, (u64)&init, 0, 0, 0, 0);
+	rkp_call(RKP_INIT, (u64)&init, 0, 0, 0, 0);
 	rkp_started = 1;
 	return;
 }
 #endif
-
 #ifdef CONFIG_RKP_KDP
-static void __init kdp_init(void)
+
+void kdp_init(void)
 {
 	kdp_init_t cred;
 
@@ -700,30 +692,20 @@ asmlinkage __visible void __init start_kernel(void)
 	vfs_caches_init_early();
 	sort_main_extable();
 	trap_init();
-#ifdef CONFIG_RKP
-	rkp_reserve_mem();
-#endif
 	mm_init();
-#ifdef CONFIG_RKP
+#ifdef CONFIG_TIMA_RKP
 	vmm_init();
 	rkp_init();
-
-#if !defined(CONFIG_USE_SIGNED_BINARY)
-	rkp_call(RKP_NOSHIP_BIN, 0, 0, 0, 0, 0);
-#endif
-
-#ifdef CONFIG_RKP_DEBUG
+#ifdef CONFIG_TIMA_RKP_DEBUG
 	rkp_call(RKP_DEBUG, 0, 0, 0, 0, 0);
 #endif
-
 #ifdef CONFIG_RELOCATABLE_KERNEL 
 	rkp_call(KASLR_MEM_RESERVE, kaslr_mem, kaslr_size, 0, 0, 0);
 #endif
-
 #ifdef CONFIG_RKP_KDP
 	rkp_cred_enable = 1;
 #endif /*CONFIG_RKP_KDP*/
-#endif //CONFIG_RKP
+#endif //CONFIG_TIMA_RKP
 
 	/*
 	 * Set up the scheduler prior starting any interrupts (such as the
@@ -815,7 +797,7 @@ asmlinkage __visible void __init start_kernel(void)
 	/* Should be run before the first non-init thread is created */
 	init_espfix_bsp();
 #endif
-	thread_stack_cache_init();
+	thread_info_cache_init();
 #ifdef CONFIG_RKP_KDP
 	if (rkp_cred_enable) 
 		kdp_init();
@@ -826,6 +808,10 @@ asmlinkage __visible void __init start_kernel(void)
 	buffer_init();
 	key_init();
 	security_init();
+#ifdef CONFIG_RKP_KDP
+	if (rkp_cred_enable) 
+		rkp_call(RKP_CMDID(0x51),(u64)__rkp_ro_start,0,0,0,0);
+#endif /*CONFIG_RKP_KDP*/
 	dbg_late_init();
 	vfs_caches_init();
 	signals_init();
@@ -1117,57 +1103,34 @@ static int try_to_run_init_process(const char *init_filename)
 extern initcall_t __deferred_initcall_start[], __deferred_initcall_end[];
 
 /* call deferred init routines */
-static void __ref do_deferred_initcalls(struct work_struct *work)
+void __ref do_deferred_initcalls(void)
 {
 	initcall_t *call;
-	static bool already_run;
+	static int already_run=0;
 
 	if (already_run) {
-		pr_warn("%s() has already run\n", __func__);
+		printk("do_deferred_initcalls() has already run\n");
 		return;
 	}
 
-	already_run = true;
+	already_run=1;
 
-	pr_err("Running %s()\n", __func__);
+	printk("Running do_deferred_initcalls()\n");
 
-	for (call = __deferred_initcall_start;
-			call < __deferred_initcall_end; call++)
+	for(call = __deferred_initcall_start;
+		call < __deferred_initcall_end; call++)
 		do_one_initcall(*call);
+
+	flush_scheduled_work();
 
 	free_initmem();
 }
-
-static DECLARE_WORK(deferred_initcall_work, do_deferred_initcalls);
 #endif
-
 #ifdef CONFIG_SEC_GPIO_DVS
 extern void gpio_dvs_check_initgpio(void);
 #endif
 
 static noinline void __init kernel_init_freeable(void);
-
-#ifdef CONFIG_DEBUG_RODATA
-static bool rodata_enabled = true;
-static int __init set_debug_rodata(char *str)
-{
-	return strtobool(str, &rodata_enabled);
-}
-__setup("rodata=", set_debug_rodata);
-
-static void mark_readonly(void)
-{
-	if (rodata_enabled)
-		mark_rodata_ro();
-	else
-		pr_info("Kernel memory protection disabled.\n");
-}
-#else
-static inline void mark_readonly(void)
-{
-	pr_warn("This architecture does not have kernel memory protection.\n");
-}
-#endif
 
 static int __ref kernel_init(void *unused)
 {
@@ -1188,7 +1151,7 @@ static int __ref kernel_init(void *unused)
 #ifndef CONFIG_DEFERRED_INITCALLS
 	free_initmem();
 #endif
-	mark_readonly();
+	mark_rodata_ro();
 	system_state = SYSTEM_RUNNING;
 	numa_default_policy();
 
@@ -1196,12 +1159,8 @@ static int __ref kernel_init(void *unused)
 
 	if (ramdisk_execute_command) {
 		ret = run_init_process(ramdisk_execute_command);
-		if (!ret) {
-#ifdef CONFIG_DEFERRED_INITCALLS
-			schedule_work(&deferred_initcall_work);
-#endif
+		if (!ret)
 			return 0;
-		}
 		pr_err("Failed to execute %s (error %d)\n",
 		       ramdisk_execute_command, ret);
 	}
@@ -1214,12 +1173,8 @@ static int __ref kernel_init(void *unused)
 	 */
 	if (execute_command) {
 		ret = run_init_process(execute_command);
-		if (!ret) {
-#ifdef CONFIG_DEFERRED_INITCALLS
-			schedule_work(&deferred_initcall_work);
-#endif
+		if (!ret)
 			return 0;
-		}
 		panic("Requested init %s failed (error %d).",
 		      execute_command, ret);
 	}

@@ -752,66 +752,11 @@
 	mali: mali@13900000 {
 		compatible = "arm,mali";
 		reg = <0x0 0x13900000 0x5000>;
-		interrupts = <0 60 0>,
-		             <0 61 0>,
-		             <0 59 0>;
+		interrupts = <0 60 0>, <0 61 0>, <0 59 0>;
 		interrupt-names = "JOB", "MMU", "GPU";
 		g3d_cmu_cal_id = <ACPM_DVFS_G3D>;
 		samsung,power-domain = <&pd_g3d>;
-		g3d_genpd_name = "pd-g3d"; /*KC: pg-g3d, LT,MK: pd-embedded_g3d*/
 		#cooling-cells = <2>; /* min followed by max */
-		governor = "interactive";
-		interactive_info = <455000 95 0>;
-		gpu_dvfs_table_size = <9 7>; /*<row col>*/
-		gpu_dvfs_table = <  839000    98  100   1  1794000  1690000     0
-		                    764000    98  100   1  1794000  1690000     0
-		                    683000    98  100   1  1794000  1690000     0
-		                    572000    78   99   1  1794000  1690000     0
-		                    546000    78   99   1  1794000  1690000     2002000
-		                    455000    78   85   1  1540000  1456000     2002000
-		                    385000    78   85   1  1352000  1248000     0
-		                    338000    78   85   1  1014000   949000     0
-		                    260000    78   85   1   421000        0     0 >;
-		gpu_sustainable_info = <0 0 0 0 0>; /* Not used */
-		gpu_pmqos_cpu_cluster_num = <2>;
-		gpu_pmu_status_reg_offset = <0x40E4>;
-		gpu_pmu_status_local_pwr_mask = <0xF>; /*0xF << 0*/
-		gpu_max_clock = <546000>;
-		gpu_max_clock_limit = <546000>;
-		gpu_min_clock = <260000>;
-		gpu_dvfs_start_clock = <260000>;
-		gpu_dvfs_bl_config_clock = <260000>;
-		gpu_default_voltage = <800000>;
-		gpu_cold_minimum_vol = <0>;
-		gpu_voltage_offset_margin = <37500>;
-		gpu_tmu_control = <1>;
-		gpu_temp_throttling_level_num = <6>;
-		gpu_temp_throttling = <546000 455000 385000 338000 260000 260000>;
-		gpu_power_coeff = <625>;
-		gpu_dvfs_time_interval = <5>; /*1 tick : 10ms*/
-		gpu_default_wakeup_lock = <1>;
-		gpu_dynamic_abb = <0>;
-		gpu_early_clk_gating = <0>;
-		gpu_dvs = <0>;
-		gpu_inter_frame_pm = <1>;
-		gpu_perf_gathering = <0>;
-		gpu_runtime_pm_delay_time = <50>;
-		gpu_dvfs_polling_time = <30>;
-		gpu_pmqos_int_disable = <1>;
-		gpu_pmqos_mif_max_clock = <1794000>;
-		gpu_pmqos_mif_max_clock_base = <546000>;
-		gpu_cl_dvfs_start_base = <455000>;
-		gpu_debug_level = <3>; /*DEBUG(1) INFO(2) WARNING(3) ERROR(4)*/
-		gpu_trace_level = <8>; /*TRACE_ALL*/
-		gpu_mo_min_clock = <455000>;
-		gpu_boost_gpu_min_lock = <0>;
-		gpu_boost_egl_min_lock = <1872000>;
-		gpu_vk_boost_max_lock = <338000>;
-		gpu_vk_boost_mif_min_lock = <1794000>;
-		gpu_bts_support = <1>;
-		gpu_asv_cali_lock_val = <546000>; /*Should check this value when MALI_ASV_CALIBRATION_SUPPORT is enabled*/
-		gpu_set_pmu_duration_reg = <0x40F0>; /* only for KC for now*/
-		gpu_set_pmu_duration_val = <0xfffff363>; /* only for KC for now*/
 	};
 
 	ufs@0x11120000 {
@@ -3602,9 +3547,6 @@
 		reg = <0x0 0x14020000 0x10000>, <0x0 0x14100000 0x59800>,
 			 <0x0 0x14070000 0x8>, <0x0 0x141F0000 0x50>;
 		reg-names = "sfr", "sram", "dmic", "gpr";
-		#address-cells = <2>;
-		#size-cells = <1>;
-		ranges;
 		pinctrl-names = "dmic_default", "amic_default", "idle";
 		pinctrl-0 = <&dmic_bus_clk &dmic_pdm>;
 		pinctrl-1 = <&amic_bus_clk &amic_pdm>;
@@ -3617,21 +3559,20 @@
 		interrupt-parent = <&mailbox_vts>;
 		interrupts = <0>, <1>, <2>, <3>, <4>, <5>;
 		interrupt-names = "error", "boot_completed", "ipc_received", "voice_triggered", "trigger_period_elapsed", "record_period_elapsed";
-		vts_dma0: vts_dma@0x0 {
-			compatible = "samsung,vts-dma";
-			reg = <0x0 0x0 0x0>;
-			vts = <&vts>;
-			id = <0>;
-			type = "vts-trigger";
-		};
+	};
 
-		vts_dma1: vts_dma@0x1 {
-			compatible = "samsung,vts-dma";
-			reg = <0x0 0x1 0x0>;
-			vts = <&vts>;
-			id = <1>;
-			type = "vts-record";
-		};
+	vts_dma0: vts_dma0 {
+		compatible = "samsung,vts-dma";
+		vts = <&vts>;
+		id = <0>;
+		type = "vts-trigger";
+	};
+
+	vts_dma1: vts_dma1 {
+		compatible = "samsung,vts-dma";
+		vts = <&vts>;
+		id = <1>;
+		type = "vts-record";
 	};
 
 	pcie0@116A0000 {
@@ -3747,7 +3688,7 @@
 		ip_ver = <15>;
 		clock_rate = <400000000>;
 		min_rate = <100000>;
-		num_qos_steps = <8>;
+		num_qos_steps = <7>;
 		max_mb = <4757298>;
 		mfc_qos_table {
 			mfc_qos_variant_0 {
@@ -3758,7 +3699,6 @@
 				freq_cpu = <0>;
 				freq_kfc = <0>;
 				mo_value = <0>;
-				mo_10bit_value = <0>;
 				time_fw = <923>;
 			};
 			mfc_qos_variant_1 {
@@ -3769,7 +3709,6 @@
 				freq_cpu = <0>;
 				freq_kfc = <0>;
 				mo_value = <0>;
-				mo_10bit_value = <0>;
 				time_fw = <431>;
 			};
 			mfc_qos_variant_2 {
@@ -3780,7 +3719,6 @@
 				freq_cpu = <0>;
 				freq_kfc = <0>;
 				mo_value = <0>;
-				mo_10bit_value = <0>;
 				time_fw = <261>;
 			};
 			mfc_qos_variant_3 {
@@ -3791,7 +3729,6 @@
 				freq_cpu = <0>;
 				freq_kfc = <0>;
 				mo_value = <0>;
-				mo_10bit_value = <0>;
 				time_fw = <226>;
 			};
 			mfc_qos_variant_4 {
@@ -3802,7 +3739,6 @@
 				freq_cpu = <0>;
 				freq_kfc = <0>;
 				mo_value = <0>;
-				mo_10bit_value = <0>;
 				time_fw = <161>;
 			};
 			mfc_qos_variant_5 {
@@ -3813,7 +3749,6 @@
 				freq_cpu = <0>;
 				freq_kfc = <0>;
 				mo_value = <1>;
-				mo_10bit_value = <0>;
 				time_fw = <196>;
 			};
 			mfc_qos_variant_6 {
@@ -3824,18 +3759,6 @@
 				freq_cpu = <0>;
 				freq_kfc = <0>;
 				mo_value = <1>;
-				mo_10bit_value = <0>;
-				time_fw = <161>;
-			};
-			mfc_qos_variant_7 {
-				thrd_mb = <4517358>;
-				freq_mfc = <667000>;
-				freq_int = <533000>;
-				freq_mif = <1794000>;
-				freq_cpu = <0>;
-				freq_kfc = <0>;
-				mo_value = <0>;
-				mo_10bit_value = <1>;
 				time_fw = <161>;
 			};
 		};
@@ -4380,16 +4303,16 @@
 		/* Dual CAM scenario */
 		sysmmu,tlb_property =
 			/* 0~9 : CSIS0~3 */
-			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID_MASK(0x0, 0x3F)>,
-			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID_MASK(0x4, 0x3F)>,
-			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID_MASK(0x8, 0x3F)>,
-			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID_MASK(0x10, 0x3F)>,
-			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID_MASK(0x14, 0x3F)>,
-			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID_MASK(0x18, 0x3F)>,
-			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID_MASK(0x20, 0x3F)>,
-			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID_MASK(0x24, 0x3F)>,
-			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID_MASK(0x28, 0x3F)>,
-			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID_MASK(0x30, 0x3F)>,
+			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID(0x0)>,
+			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID(0x4)>,
+			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID(0x8)>,
+			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID(0x10)>,
+			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID(0x14)>,
+			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID(0x18)>,
+			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID(0x20)>,
+			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID(0x24)>,
+			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID(0x28)>,
+			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID(0x30)>,
 			/* 10~13 : TPU1_ID */
 			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_READ   | SYSMMU_BL4) SYSMMU_ID(0x7)>,
 			<(SYSMMU_PRIV_ID_PREFETCH_ASCENDING_WRITE  | SYSMMU_BL4) SYSMMU_ID(0x3)>,
@@ -5004,23 +4927,6 @@
 			input_booster,phase_times = <0 0>;
 		};
 		booster_key@9 {
-			input_booster,label = "PEN";
-			input_booster,type = <8>;	/* BOOSTER_DEVICE_MOUSE */
-
-			input_booster,levels = <1 2>;
-
-			/* Frequency table */
-			/* for level	:	1_Head 2_Tail*/
-			input_booster,cpu_freqs = <1469000 858000>;
-			input_booster,hmp_boost = <1 1>;
-			input_booster,kfc_freqs = <832000 832000>;
-			input_booster,bimc_freqs = <0 0>;
-
-			/* Time table */
-			input_booster,head_times = <200 0>;
-			input_booster,tail_times = <0 600>;
-		};
-		booster_key@10 {
 			input_booster,label = "KEY_TWO";
 			input_booster,type = <9>;	/* BOOSTER_DEVICE_KEY */
 
@@ -5046,68 +4952,5 @@
 		compatible = "samsung,exynos8-rtc";
 		reg = <0x0 0x16490000 0x100>;
 		interrupts = <0 79 0>, <0 78 0>;
-	};
-
-	cpufreq-ufc {
-		/* Ctrl Type */
-		#define PM_QOS_MIN_LIMIT		0
-		#define PM_QOS_MIN_WO_BOOST_LIMIT	1
-		#define PM_QOS_MAX_LIMIT		2
-		/* Execution Mode */
-		#define	AARCH64_MODE			0
-		#define AARCH32_MODE			1
-
-		domain@0 {
-			device_type = "cpufreq-userctrl";
-			shared-cpus = "0-3";
-
-			user-default-qos = <715000>;
-		};
-
-		domain@1 {
-			device_type = "cpufreq-userctrl";
-			shared-cpus = "4-7";
-
-			user-default-qos = <962000>;
-
-			min-limit {
-				ctrl-type = <PM_QOS_MIN_LIMIT>;
-				execution-mode = <AARCH64_MODE>;
-					/* big	    lit */
-				table = < 2314000 1690000
-					2158000 715000
-					2002000 715000
-					1937000 715000
-					1807000 715000
-					1703000 715000
-					1469000 715000
-					1261000 715000
-					1170000 715000
-					1066000 715000
-					 962000 715000
-					 858000 715000
-					 741000 715000>;
-			};
-
-			max-limit {
-				ctrl-type = <PM_QOS_MAX_LIMIT>;
-				execution-mode = <AARCH64_MODE>;
-					/* big	    lit */
-				table = < 2314000 1690000
-					2158000 1690000
-					2002000 1690000
-					1937000 1690000
-					1807000 1690000
-					1703000 1690000
-					1469000 1690000
-					1261000 1690000
-					1170000 1690000
-					1066000 1690000
-					 962000 1690000
-					 858000 1690000
-					 741000 1690000 >;
-			};
-
-		};
 	};
 };

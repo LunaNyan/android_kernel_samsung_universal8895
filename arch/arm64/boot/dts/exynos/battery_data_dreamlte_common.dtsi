@@ -46,7 +46,6 @@
 
 	hsi2c@10940000 { /* hsi2c_usi12_0 */
 		status = "okay";
-		samsung,stop-after-trans;
 		clock-frequency = <100000>;
 
 		mfc-charger@3b {
@@ -256,6 +255,10 @@
 		battery,swelling_high_rechg_voltage = <4000>;
 		battery,swelling_low_rechg_voltage = <4000>;
 
+		battery,siop_event_check_type = <1>;
+		battery,siop_call_cv_current = <330>;
+		battery,siop_call_cc_current = <330>;
+
 		battery,siop_input_limit_current = <1200>;
 		battery,siop_charging_limit_current = <1000>;
 		battery,siop_hv_input_limit_current = <500>;
@@ -277,9 +280,9 @@
 
 		/* cycle, chg_float_voltage, recharge_condition_vcell, full_condition_vcell, full_condition_soc */
 		battery,age_data = <0 43500 4280 4250 93
-				300 43250 4255 4225 92
-				400 43125 4242 4212 91
-				700 42875 4217 4187 90
+				200 43250 4255 4225 92
+				250 43125 4242 4212 91
+				300 42875 4217 4187 90
 				1000 42375 4167 4137 89>;
 
 		battery,max_input_voltage = <12000>; /* mV */
@@ -435,7 +438,7 @@
  *  11	HV_WIRELESS,
  *  12	PMA_WIRELESS,
  *  13	WIRELESS_PACK,
- *  14	WIRELESS_HV_PACK,
+ *  14	WIRELESS_PACK_TA,
  *  15	WIRELESS_STAND,
  *  16	WIRELESS_HV_STAND,
  *  17	QC20,
@@ -452,10 +455,7 @@
  *  28	WIRELESS_HV_VEHICLE,
  *  29	PREPARE_WIRELESS_HV,
  *  30	TIMEOUT,
- *  31  SMART_OTG,
- *  32  SMART_NOTG,
- *  33	WIRELESS_TX,
- *  34	CABLE_MAX,
+ *  31	CABLE_MAX,
 */
 	cable-info {
 		   default_input_current = <1800>;
@@ -469,12 +469,12 @@
 			       charging_current = <500>;
 		   };
 		   current_group_2 {
-		   	       cable_number = <2 25 31>;
+		   	       cable_number = <2 25>;
 			       input_current = <1000>;
 			       charging_current = <1000>;
 		  };
 		   current_group_3 {
-		   	       cable_number = <5 32>;
+		   	       cable_number = <5>;
 			       input_current = <1500>;
 			       charging_current = <1500>;
 		  };
@@ -489,7 +489,7 @@
 			       charging_current = <2150>;
 		  };
 		   current_group_6 {
-		   	       cable_number = <10 12 15 27 33>;
+		   	       cable_number = <10 12 14 15 27>;
 			       input_current = <900>;
 			       charging_current = <1200>;
 		  };
@@ -509,7 +509,7 @@
 			       charging_current = <1800>;
 		  };
 		   current_group_10 {
-		   	       cable_number = <11 14 16 28>;
+		   	       cable_number = <11 16 28>;
 			       input_current = <650>;
 			       charging_current = <1200>;
 		  };

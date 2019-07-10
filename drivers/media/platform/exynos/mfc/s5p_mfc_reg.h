@@ -152,8 +152,6 @@
 						>> S5P_FIMV_D_HEVC_INFO_SHIFT)		\
 						& S5P_FIMV_D_HEVC_INFO_MAIN_422_10_INTRA_MASK)	\
 						== S5P_FIMV_D_HEVC_INFO_MAIN_422_10_INTRA_VAL)
-#define s5p_mfc_get_lcu_size()			(MFC_READL(S5P_FIMV_D_HEVC_INFO)		\
-						& S5P_FIMV_D_HEVC_INFO_LCU_SIZE_MASK)
 
 
 /* nal queue information */
@@ -262,10 +260,9 @@ static inline void s5p_mfc_risc_on(struct s5p_mfc_dev *dev)
 	s5p_mfc_clean_dev_int_flags(dev);
 
 	MFC_WRITEL(0x1, S5P_FIMV_RISC_ON);
-	if (FW_HAS_HWACG(dev))
+	if (FW_HAS_HWACG(dev)) {
 		MFC_WRITEL(0x0, S5P_FIMV_MFC_OFF);
-	mfc_debug(1, "RISC ON\n");
-	MFC_TRACE_DEV("RISC ON\n");
+	}
 }
 
 static inline void s5p_mfc_risc_off(struct s5p_mfc_dev *dev)

@@ -14,9 +14,6 @@ else
     if [ -L ${DST} ]
     then
       rm -f ${DST}
-    elif [ -d ${DST} ]
-    then
-      rm -r ${DST}
     fi
     ln -s $(basename ${SRC}) ${DST}
   else

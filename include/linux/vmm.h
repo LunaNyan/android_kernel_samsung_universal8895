@@ -20,12 +20,13 @@
 #ifndef __VMM_H__
 #define __VMM_H__
 
+#define VMM_RUNTIME_BASE 0xB0500000
+#define VMM_RUNTIME_SIZE 0x100000
+
 #ifndef __ASSEMBLY__
 
 int vmm_init(void);
 int vmm_disable(void);
-
-int _vmm_goto_EL2(int magic, void *label, int offset, int mode, void *base, int size);
 
 #endif //__ASSEMBLY__
 

@@ -532,7 +532,6 @@ struct amdgpu_bo {
 	u64				metadata_flags;
 	void				*metadata;
 	u32				metadata_size;
-	unsigned			prime_shared_count;
 	/* list of all virtual address to which this bo
 	 * is associated to
 	 */
@@ -711,9 +710,9 @@ int amdgpu_gart_table_vram_pin(struct amdgpu_device *adev);
 void amdgpu_gart_table_vram_unpin(struct amdgpu_device *adev);
 int amdgpu_gart_init(struct amdgpu_device *adev);
 void amdgpu_gart_fini(struct amdgpu_device *adev);
-void amdgpu_gart_unbind(struct amdgpu_device *adev, uint64_t offset,
+void amdgpu_gart_unbind(struct amdgpu_device *adev, unsigned offset,
 			int pages);
-int amdgpu_gart_bind(struct amdgpu_device *adev, uint64_t offset,
+int amdgpu_gart_bind(struct amdgpu_device *adev, unsigned offset,
 		     int pages, struct page **pagelist,
 		     dma_addr_t *dma_addr, uint32_t flags);
 

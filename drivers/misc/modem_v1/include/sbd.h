@@ -248,9 +248,6 @@ struct sbd_ring_buffer {
 	*/
 	struct io_device *iod;
 	struct link_device *ld;
-
-	/* Flow control */
-	atomic_t busy;
 };
 
 struct sbd_link_attr {

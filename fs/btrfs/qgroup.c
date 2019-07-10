@@ -995,7 +995,7 @@ int btrfs_quota_disable(struct btrfs_trans_handle *trans,
 		goto out;
 	fs_info->quota_enabled = 0;
 	fs_info->pending_quota_state = 0;
-	btrfs_qgroup_wait_for_completion(fs_info, false);
+	btrfs_qgroup_wait_for_completion(fs_info);
 	spin_lock(&fs_info->qgroup_lock);
 	quota_root = fs_info->quota_root;
 	fs_info->quota_root = NULL;
@@ -2349,9 +2349,6 @@ out:
 	}
 
 done:
-	mutex_lock(&fs_info->qgroup_rescan_lock);
-	fs_info->qgroup_rescan_running = false;
-	mutex_unlock(&fs_info->qgroup_rescan_lock);
 	complete_all(&fs_info->qgroup_rescan_completion);
 }
 
@@ -2393,7 +2390,6 @@ qgroup_rescan_init(struct btrfs_fs_info *fs_info, u64 progress_objectid,
 		sizeof(fs_info->qgroup_rescan_progress));
 	fs_info->qgroup_rescan_progress.objectid = progress_objectid;
 	init_completion(&fs_info->qgroup_rescan_completion);
-	fs_info->qgroup_rescan_running = true;
 
 	spin_unlock(&fs_info->qgroup_lock);
 	mutex_unlock(&fs_info->qgroup_rescan_lock);
@@ -2471,26 +2467,20 @@ btrfs_qgroup_rescan(struct btrfs_fs_info *fs_info)
 	return 0;
 }
 
-int btrfs_qgroup_wait_for_completion(struct btrfs_fs_info *fs_info,
-				     bool interruptible)
+int btrfs_qgroup_wait_for_completion(struct btrfs_fs_info *fs_info)
 {
 	int running;
 	int ret = 0;
 
 	mutex_lock(&fs_info->qgroup_rescan_lock);
 	spin_lock(&fs_info->qgroup_lock);
-	running = fs_info->qgroup_rescan_running;
+	running = fs_info->qgroup_flags & BTRFS_QGROUP_STATUS_FLAG_RESCAN;
 	spin_unlock(&fs_info->qgroup_lock);
 	mutex_unlock(&fs_info->qgroup_rescan_lock);
 
-	if (!running)
-		return 0;
-
-	if (interruptible)
+	if (running)
 		ret = wait_for_completion_interruptible(
 					&fs_info->qgroup_rescan_completion);
-	else
-		wait_for_completion(&fs_info->qgroup_rescan_completion);
 
 	return ret;
 }

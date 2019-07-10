@@ -41,10 +41,7 @@
 #include "ecryptfs_sdp_chamber.h"
 #include "ecryptfs_dek.h"
 
-#if (ANDROID_VERSION < 80000)
 #include "../sdcardfs/sdcardfs.h"
-#endif
-
 #endif
 
 #ifdef CONFIG_DLP
@@ -78,7 +75,7 @@ void ecryptfs_revert_fsids(const struct cred * old_cred)
 	put_cred(cur_cred); 
 }
 
-#if !defined(CONFIG_SDP) || (ANDROID_VERSION >= 80000)
+#ifndef CONFIG_SDP
 static struct dentry *lock_parent(struct dentry *dentry)
 {
 	struct dentry *dir;
@@ -180,10 +177,8 @@ static int ecryptfs_interpose(struct dentry *lower_dentry,
 	if (IS_ERR(inode))
 		return PTR_ERR(inode);
 	d_instantiate(dentry, inode);
-#if (ANDROID_VERSION < 80000)
 	if(d_unhashed(dentry))
 		d_rehash(dentry);
-#endif
 
 #ifdef CONFIG_SDP
 	if(S_ISDIR(inode->i_mode) && dentry) {
@@ -449,10 +444,8 @@ ecryptfs_create(struct inode *directory_inode, struct dentry *ecryptfs_dentry,
 	}
 	unlock_new_inode(ecryptfs_inode);
 	d_instantiate(ecryptfs_dentry, ecryptfs_inode);
-#if (ANDROID_VERSION < 80000)
 	if(d_unhashed(ecryptfs_dentry))
 		d_rehash(ecryptfs_dentry);
-#endif
 out:
 	return rc;
 }
@@ -518,10 +511,6 @@ static int ecryptfs_lookup_interpose(struct dentry *dentry,
 	dentry_info->lower_path.dentry = lower_dentry;
 
 	if (d_really_is_negative(lower_dentry)) {
-#if (ANDROID_VERSION >= 80000)
-		/* We want to add because we couldn't find in lower */
-		d_add(dentry, NULL);
-#endif
 		return 0;
 	}
 	inode = __ecryptfs_get_inode(lower_inode, dir_inode->i_sb);
@@ -636,7 +625,7 @@ static struct dentry *ecryptfs_lookup(struct inode *ecryptfs_dir_inode,
 	}
 	mutex_lock(&d_inode(lower_dir_dentry)->i_mutex);
 
-#if defined(CONFIG_SDP) && (ANDROID_VERSION < 80000)
+#ifdef CONFIG_SDP
 	if(!strncmp(lower_dir_dentry->d_sb->s_type->name, "sdcardfs", 8)) {
 		struct sdcardfs_dentry_info *dinfo = SDCARDFS_D(lower_dir_dentry);
 		struct dentry *parent = dget_parent(lower_dir_dentry);
@@ -691,7 +680,7 @@ static struct dentry *ecryptfs_lookup(struct inode *ecryptfs_dir_inode,
 	lower_dentry = lookup_one_len(encrypted_and_encoded_name,
 				      lower_dir_dentry,
 				      encrypted_and_encoded_name_size);
-#if defined(CONFIG_SDP) && (ANDROID_VERSION < 80000)
+#ifdef CONFIG_SDP
 	if(!strncmp(lower_dir_dentry->d_sb->s_type->name, "sdcardfs", 8)) {
 		struct sdcardfs_dentry_info *dinfo = SDCARDFS_D(lower_dir_dentry);
 		dinfo->under_knox = 0;
@@ -802,7 +791,7 @@ static int ecryptfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	lower_dentry = ecryptfs_dentry_to_lower(dentry);
 	lower_dir_dentry = lock_parent(lower_dentry);
 
-#if defined(CONFIG_SDP) && (ANDROID_VERSION < 80000)
+#ifdef CONFIG_SDP
 	if(!strncmp(lower_dir_dentry->d_sb->s_type->name, "sdcardfs", 8)) {
 		struct sdcardfs_dentry_info *dinfo = SDCARDFS_D(lower_dir_dentry);
 		int len = strlen(dentry->d_name.name);
@@ -829,7 +818,7 @@ static int ecryptfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	fsstack_copy_inode_size(dir, d_inode(lower_dir_dentry));
 	set_nlink(dir, d_inode(lower_dir_dentry)->i_nlink);
 out:
-#if defined(CONFIG_SDP) && (ANDROID_VERSION < 80000)
+#ifdef CONFIG_SDP
 	if(!strncmp(lower_dir_dentry->d_sb->s_type->name, "sdcardfs", 8)) {
 		struct sdcardfs_dentry_info *dinfo = SDCARDFS_D(lower_dir_dentry);
 		dinfo->under_knox = 0;
@@ -1637,7 +1626,6 @@ const struct inode_operations ecryptfs_dir_iops = {
 	.rename = ecryptfs_rename,
 	.permission = ecryptfs_permission,
 	.setattr = ecryptfs_setattr,
-	.getattr = ecryptfs_getattr,
 	.setxattr = ecryptfs_setxattr,
 	.getxattr = ecryptfs_getxattr,
 	.listxattr = ecryptfs_listxattr,

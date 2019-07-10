@@ -34,11 +34,9 @@ static int do_transfer(struct ssp_data *data, struct ssp_msg *msg,
 int ssp_spi_async(struct ssp_data *data, struct ssp_msg *msg)
 {
 	int status = 0;
-	u64 diff = get_current_timestamp() - data->resumeTimestamp;
-	int timeout = diff < 5000000000ULL ? 400 : 1000; // unit: ms
 
 	if (msg->length)
-		return ssp_spi_sync(data, msg, timeout);
+		return ssp_spi_sync(data, msg, 2000);
 
 	status = do_transfer(data, msg, NULL, 0);
 
@@ -220,8 +218,8 @@ int send_instruction(struct ssp_data *data, u8 uInst,
 	char command;
 	int iRet = 0;
 	struct ssp_msg *msg;
-
-	//u64 current_Ts = 0;
+	
+	//u64 current_Ts = 0; 
 #ifdef CONFIG_SENSORS_SSP_HIFI_BATCHING
 	u64 timestamp;
 #endif
@@ -263,7 +261,7 @@ int send_instruction(struct ssp_data *data, u8 uInst,
 		data->ts_avg_buffer_sum[uSensorType] = 0;
 		data->ts_prev_index[uSensorType] = 0;
 		data->ts_avg_skip_cnt[uSensorType] = SKIP_CNT_MOVING_AVG_CHANGE;
-		memset(data->ts_avg_buffer[uSensorType], 0,
+		memset(data->ts_avg_buffer[uSensorType], 0, 
 				sizeof(u64)*SIZE_MOVING_AVG_BUFFER);
 #endif
 		data->first_sensor_data[uSensorType] = true;
@@ -308,17 +306,18 @@ int send_instruction(struct ssp_data *data, u8 uInst,
 		pr_err("[SSP]: %s - Instruction CMD Fail %d\n", __func__, iRet);
 		return ERROR;
 	}
-
-	if (uInst == ADD_SENSOR || uInst == CHANGE_DELAY) {
-		unsigned int BatchTimeforReset = 0;
-	//current_Ts = get_current_timestamp();
-		if (uLength >= 9)
-			BatchTimeforReset = *(unsigned int *)(&uSendBuf[4]);// Add / change normal case, not factory.
-	//pr_info("[SSP] %s timeForRest %d", __func__, BatchTimeforReset);
-			data->IsBypassMode[uSensorType] = (BatchTimeforReset == 0);
-	//pr_info("[SSP] sensor%d mode%d Time %lld\n", uSensorType, data->IsBypassMode[uSensorType], current_Ts);
-	}
-	return iRet;
+	
+    if(uInst == ADD_SENSOR || uInst == CHANGE_DELAY)
+    {
+        unsigned int BatchTimeforReset = 0;
+        //current_Ts = get_current_timestamp();
+        if(uLength >= 9)
+            BatchTimeforReset = *(unsigned int*)(&uSendBuf[4]);// Add / change normal case, not factory.
+        //pr_info("[SSP] %s timeForRest %d", __func__, BatchTimeforReset);
+        data->IsBypassMode[uSensorType] = (BatchTimeforReset == 0);
+        //pr_info("[SSP] sensor%d mode%d Time %lld\n", uSensorType, data->IsBypassMode[uSensorType], current_Ts);
+    }
+    return iRet;
 }
 
 int send_instruction_sync(struct ssp_data *data, u8 uInst,
@@ -328,8 +327,8 @@ int send_instruction_sync(struct ssp_data *data, u8 uInst,
 	int iRet = 0;
 	char buffer[10] = { 0, };
 	struct ssp_msg *msg;
-
-	//u64 current_Ts = 0;
+	
+	//u64 current_Ts = 0; 
 #ifdef CONFIG_SENSORS_SSP_HIFI_BATCHING
 	u64 timestamp;
 #endif
@@ -416,17 +415,18 @@ int send_instruction_sync(struct ssp_data *data, u8 uInst,
 		pr_err("[SSP]: %s - Instruction CMD Fail %d\n", __func__, iRet);
 		return ERROR;
 	}
-
-	if (uInst == ADD_SENSOR || uInst == CHANGE_DELAY) {
-		unsigned int BatchTimeforReset = 0;
-	//current_Ts = get_current_timestamp();
-		if (uLength >= 9)
-			BatchTimeforReset = *(unsigned int *)(&uSendBuf[4]);// Add / change normal case, not factory.
-	//pr_info("[SSP] %s timeForRest %d", __func__, BatchTimeforReset);
-		data->IsBypassMode[uSensorType] = (BatchTimeforReset == 0);
-	//pr_info("[SSP] sensor%d mode%d Time %lld\n", uSensorType, data->IsBypassMode[uSensorType], current_Ts);
-	}
-	return buffer[0];
+	
+    if(uInst == ADD_SENSOR || uInst == CHANGE_DELAY)
+    {
+        unsigned int BatchTimeforReset = 0;
+        //current_Ts = get_current_timestamp();
+        if(uLength >= 9)
+            BatchTimeforReset = *(unsigned int*)(&uSendBuf[4]);// Add / change normal case, not factory.
+        //pr_info("[SSP] %s timeForRest %d", __func__, BatchTimeforReset);
+        data->IsBypassMode[uSensorType] = (BatchTimeforReset == 0);
+        //pr_info("[SSP] sensor%d mode%d Time %lld\n", uSensorType, data->IsBypassMode[uSensorType], current_Ts);
+    }
+    return buffer[0];
 }
 
 int flush(struct ssp_data *data, u8 uSensorType)
@@ -560,8 +560,8 @@ int set_sensor_position(struct ssp_data *data)
 			data->mag_position, 0);
 
 	if (iRet != SUCCESS) {
-		pr_err("[SSP] %s -fail to %s %d\n",
-			__func__, __func__, iRet);
+		pr_err("[SSP] %s -fail to set_sensor_position %d\n",
+			__func__, iRet);
 		iRet = ERROR;
 	}
 
@@ -593,8 +593,8 @@ int set_glass_type(struct ssp_data *data)
 	pr_info("[SSP] glass_type : %u\n", data->glass_type);
 
 	if (iRet != SUCCESS) {
-		pr_err("[SSP] %s -fail to %s %d\n",
-			__func__, __func__, iRet);
+		pr_err("[SSP] %s -fail to set_glass_type %d\n",
+			__func__, iRet);
 		iRet = ERROR;
 	}
 
@@ -623,8 +623,8 @@ int set_magnetic_static_matrix(struct ssp_data *data)
 
 	iRet = ssp_spi_async(data, msg);
 	if (iRet != SUCCESS) {
-		pr_err("[SSP] %s -fail to %s %d\n",
-				__func__, __func__, iRet);
+		pr_err("[SSP] %s -fail to set_magnetic_static_matrix %d\n",
+				__func__, iRet);
 		iRet = ERROR;
 	}
 
@@ -638,12 +638,18 @@ void set_proximity_threshold(struct ssp_data *data)
 	struct ssp_msg *msg;
 
 	if (!(data->uSensorState & (1 << PROXIMITY_SENSOR))) {
-		pr_info("[SSP]: %s - Skip this function!!!,proximity sensor is not connected(0x%llx)\n",
+		pr_info("[SSP]: %s - Skip this function!!!,"\
+			"proximity sensor is not connected(0x%llx)\n",
 			__func__, data->uSensorState);
 		return;
 	}
 
 	msg = kzalloc(sizeof(*msg), GFP_KERNEL);
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n",
+			__func__);
+		return;
+	}
 #if defined(CONFIG_SENSORS_SSP_TMG399x)
 	msg->cmd = MSG2SSP_AP_SENSOR_PROXTHRESHOLD;
 	msg->length = 2;
@@ -706,20 +712,25 @@ void set_proximity_alert_threshold(struct ssp_data *data)
 	struct ssp_msg *msg;
 
 	if (!(data->uSensorState & (1 << PROXIMITY_ALERT_SENSOR))) {
-		pr_info("[SSP]: %s - Skip this function!!!,proximity alert sensor is not connected(0x%llx)\n",
+		pr_info("[SSP]: %s - Skip this function!!!,"\
+			"proximity alert sensor is not connected(0x%llx)\n",
 			__func__, data->uSensorState);
 		return;
 	}
 
 	msg = kzalloc(sizeof(*msg), GFP_KERNEL);
-
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n",
+			__func__);
+		return;
+	}
 	msg->cmd = MSG2SSP_AP_SENSOR_PROX_ALERT_THRESHOLD;
 	msg->length = 2;
 	msg->options = AP2HUB_WRITE;
 	msg->buffer = (char *) kzalloc(2, GFP_KERNEL);
 	msg->free_buffer = 1;
 
-	msg->buffer[0] = ((char) (data->uProxAlertHiThresh >> 8) & 0xff);
+	msg->buffer[0] = ((char) (data->uProxAlertHiThresh>> 8) & 0xff);
 	msg->buffer[1] = (char) data->uProxAlertHiThresh;
 
 	iRet = ssp_spi_async(data, msg);
@@ -740,12 +751,18 @@ void set_light_coef(struct ssp_data *data)
 	struct ssp_msg *msg;
 
 	if (!(data->uSensorState & (1 << LIGHT_SENSOR))) {
-		pr_info("[SSP]: %s - Skip this function!!!,light sensor is not connected(0x%llx)\n",
+		pr_info("[SSP]: %s - Skip this function!!!,"\
+			"light sensor is not connected(0x%llx)\n",
 			__func__, data->uSensorState);
 		return;
 	}
 
 	msg = kzalloc(sizeof(*msg), GFP_KERNEL);
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n",
+			__func__);
+		return;
+	}
 
 	msg->cmd = MSG2SSP_AP_SET_LIGHT_COEF;
 	msg->length = sizeof(data->light_coef);
@@ -773,6 +790,10 @@ void set_proximity_barcode_enable(struct ssp_data *data, bool bEnable)
 	int iRet = 0;
 	struct ssp_msg *msg = kzalloc(sizeof(*msg), GFP_KERNEL);
 
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n", __func__);
+		return;
+	}
 	msg->cmd = MSG2SSP_AP_SENSOR_BARCODE_EMUL;
 	msg->length = 1;
 	msg->options = AP2HUB_WRITE;
@@ -797,6 +818,11 @@ void set_gesture_current(struct ssp_data *data, unsigned char uData1)
 	int iRet = 0;
 	struct ssp_msg *msg = kzalloc(sizeof(*msg), GFP_KERNEL);
 
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n",
+			__func__);
+		return;
+	}
 	msg->cmd = MSG2SSP_AP_SENSOR_GESTURE_CURRENT;
 	msg->length = 1;
 	msg->options = AP2HUB_WRITE;
@@ -837,8 +863,8 @@ int set_hall_threshold(struct ssp_data *data)
 
 	iRet = ssp_spi_async(data, msg);
 	if (iRet != SUCCESS) {
-		pr_err("[SSP]: %s - fail to %s %d\n",
-			__func__, __func__, iRet);
+		pr_err("[SSP]: %s - fail to set_hall_threshold %d\n",
+			__func__, iRet);
 		iRet = ERROR;
 	}
 
@@ -870,7 +896,7 @@ u64 get_sensor_scanning_info(struct ssp_data *data)
 
 	data->sensor_state[SENSOR_MAX] = '\0';
 	for (z = 0; z < SENSOR_MAX; z++)
-		data->sensor_state[SENSOR_MAX - 1 - z] = (result & (1ULL << z)) ? '1' : '0';
+		data->sensor_state[SENSOR_MAX - 1 - z] = (result & (1 << z)) ? '1' : '0';
 	pr_err("[SSP]: state: %s\n", data->sensor_state);
 
 	return result;
@@ -1037,33 +1063,38 @@ void set_gyro_cal_lib_enable(struct ssp_data *data, bool bEnable)
 	u8 cmd;
 	struct ssp_msg *msg;
 
-	pr_info("[SSP] %s - enable %d(cur %d)\n", __func__, bEnable, data->gyro_lib_state);
+	pr_info("[SSP] %s - enable %d(cur %d)\n", __func__, bEnable,data->gyro_lib_state);
 
-	if (bEnable)
+	if(bEnable)
 		cmd = SH_MSG2AP_GYRO_CALIBRATION_START;
 	else
 		cmd = SH_MSG2AP_GYRO_CALIBRATION_STOP;
-
+	
 	msg = kzalloc(sizeof(*msg), GFP_KERNEL);
-
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n", __func__);
+		return;
+	}
 	msg->cmd = cmd;
 	msg->length = 1;
 	msg->options = AP2HUB_WRITE;
-	msg->buffer = (char *) kzalloc(1, GFP_KERNEL);
+	msg->buffer = (char*) kzalloc(1, GFP_KERNEL);
 	msg->free_buffer = 1;
 
 	msg->buffer[0] = bEnable;
 
 	iRet = ssp_spi_async(data, msg);
 
-	if (iRet == SUCCESS) {
-		if (bEnable)
+	if(iRet == SUCCESS)
+	{
+		if(bEnable)
 			data->gyro_lib_state = GYRO_CALIBRATION_STATE_REGISTERED;
 		else
 			data->gyro_lib_state = GYRO_CALIBRATION_STATE_DONE;
-	} else
+	}
+	else
 		pr_err("[SSP] %s - gyro lib enable cmd fail\n", __func__);
-
+	
 }
 
 #if defined(CONFIG_SSP_MOTOR_CALLBACK)
@@ -1073,11 +1104,14 @@ int send_motor_state(struct ssp_data *data)
 	struct ssp_msg *msg;
 
 	msg = kzalloc(sizeof(*msg), GFP_KERNEL);
-
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n", __func__);
+		return -ENOMEM;
+	}
 	msg->cmd = MSG2SSP_AP_MCU_SET_MOTOR_STATUS;
 	msg->length = 1;
 	msg->options = AP2HUB_WRITE;
-	msg->buffer = (char *) kzalloc(1, GFP_KERNEL);
+	msg->buffer = (char*) kzalloc(1, GFP_KERNEL);
 	msg->free_buffer = 1;
 
 	/*if 1: start, 0: stop*/
@@ -1093,14 +1127,16 @@ int send_motor_state(struct ssp_data *data)
 	return data->motor_state;
 }
 #endif
-u8 get_accel_range(struct ssp_data *data)
+u8 get_accel_range (struct ssp_data *data)
 {
 	int iRet = 0;
 	struct ssp_msg *msg;
-	u8 rxbuffer[1] = {0x00};
-
+    u8 rxbuffer[1] = {0x00};
 	msg = kzalloc(sizeof(*msg), GFP_KERNEL);
-
+	if (msg == NULL) {
+		pr_err("[SSP] %s, failed to alloc memory for ssp_msg\n", __func__);
+		return -ENOMEM;
+	}
 	msg->cmd = MSG2SSP_AP_MCU_GET_ACCEL_RANGE;
 	msg->length = 1;
 	msg->options = AP2HUB_READ;
@@ -1113,7 +1149,7 @@ u8 get_accel_range(struct ssp_data *data)
 				__func__, iRet);
 		return iRet;
 	}
-
+    
 	pr_info("[SSP] %s - Range : %u\n", __func__, rxbuffer[0]);
 	return rxbuffer[0];
 }

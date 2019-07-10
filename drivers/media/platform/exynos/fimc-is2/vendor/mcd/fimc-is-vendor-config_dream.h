@@ -48,8 +48,6 @@
 
 #define CAMERA_PAF_CAL_ERROR_CHECK
 
-#define RTA_CODE_AREA_SIZE (0x00100000)
-
 /* Sync with SUPPORT_GROUP_MIGRATION in HAL Side. */
 /* #define CONFIG_SUPPORT_GROUP_MIGRATION_FOR_TDNR */
 /* #define CONFIG_ENABLE_TDNR */
@@ -62,10 +60,6 @@
 #define CSI_SCENARIO_TELE		(2)
 #define CSI_SCENARIO_SECURE		(3)
 //#define CSI_SCENARIO_SEN_REAR	(0)
-#endif
-
-#if ANDROID_VERSION >= 90000 /* Over P */
-#define USE_FACE_UNLOCK_AE_AWB_INIT /* for Face Unlock */
 #endif
 
 #endif /* FIMC_IS_VENDOR_CONFIG_DREAM_H */

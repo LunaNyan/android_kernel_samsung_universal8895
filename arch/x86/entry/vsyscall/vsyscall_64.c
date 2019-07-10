@@ -66,11 +66,6 @@ static int __init vsyscall_setup(char *str)
 }
 early_param("vsyscall", vsyscall_setup);
 
-bool vsyscall_enabled(void)
-{
-	return vsyscall_mode != NONE;
-}
-
 static void warn_bad_vsyscall(const char *level, struct pt_regs *regs,
 			      const char *message)
 {

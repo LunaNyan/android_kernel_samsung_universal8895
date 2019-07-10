@@ -284,8 +284,7 @@ static enum log_flags console_prev;
 static u64 clear_seq;
 static u32 clear_idx;
 
-/* { SecProductFeature_KNOX.SEC_PRODUCT_FEATURE_KNOX_SUPPORT_MDM */
-/* The next printk record to read after the last 'clear_knox' command */
+/* { SecProductFeature_KNOX.SEC_PRODUCT_FEATURE_KNOX_SUPPORT_MDM - the next printk record to read after the last 'clear_knox' command */
 static u64 clear_seq_knox;
 static u32 clear_idx_knox;
 
@@ -457,14 +456,6 @@ void register_set_auto_comm_buf(void (*func)(int type, const char *buf, size_t s
 }
 #endif
 
-#ifdef CONFIG_SEC_DEBUG_INIT_LOG
-static void (*func_hook_init_log)(const char *buf, size_t size);
-void register_init_log_hook_func(void (*func)(const char *buf, size_t size))
-{
-	func_hook_init_log = func;
-}
-#endif
-
 #ifdef CONFIG_EXYNOS_SNAPSHOT
 static size_t hook_size;
 static char hook_text[LOG_LINE_MAX + PREFIX_MAX];
@@ -589,8 +580,7 @@ static int log_store(int facility, int level,
 
 #ifdef CONFIG_PRINTK_PROCESS
 	if (printk_process) {
-		strncpy(msg->process, current->comm, sizeof(msg->process)-1);
-		msg->process[sizeof(msg->process)-1]='\0';
+		strncpy(msg->process, current->comm, sizeof(msg->process));
 		msg->pid = task_pid_nr(current);
 		msg->cpu = smp_processor_id();
 		msg->in_interrupt = in_interrupt() ? 1 : 0;
@@ -606,12 +596,6 @@ static int log_store(int facility, int level,
 #ifdef CONFIG_SEC_DEBUG_AUTO_SUMMARY
 		if (msg->for_auto_summary && func_hook_auto_comm)
 			func_hook_auto_comm(msg->type_auto_summary, hook_text, hook_size);
-#endif
-
-#ifdef CONFIG_SEC_DEBUG_INIT_LOG
-		if (task_pid_nr(current) == 1 && func_hook_init_log) {
-			func_hook_init_log(hook_text, hook_size);
-		}
 #endif
 	}
 #endif
@@ -1359,15 +1343,15 @@ static int syslog_print_all(char __user *buf, int size, bool clear, bool knox)
 		u64 seq;
 		u32 idx;
 		enum log_flags prev;
-
+		
 		/* { SecProductFeature_KNOX.SEC_PRODUCT_FEATURE_KNOX_SUPPORT_MDM */
 		/* messages are gone, move to first available one */
 		if (!knox && clear_seq < log_first_seq) {
-			clear_seq = log_first_seq;
-			clear_idx = log_first_idx;
+				clear_seq = log_first_seq;
+				clear_idx = log_first_idx;
 		} else if (knox && clear_seq_knox < log_first_seq) {
-			clear_seq_knox = log_first_seq;
-			clear_idx_knox = log_first_idx;
+				clear_seq_knox = log_first_seq;
+				clear_idx_knox = log_first_idx;
 		}
 		/* } SecProductFeature_KNOX.SEC_PRODUCT_FEATURE_KNOX_SUPPORT_MDM */
 
@@ -1375,17 +1359,17 @@ static int syslog_print_all(char __user *buf, int size, bool clear, bool knox)
 		 * Find first record that fits, including all following records,
 		 * into the user-provided buffer for this dump.
 		 */
-
-		/* { SecProductFeature_KNOX.SEC_PRODUCT_FEATURE_KNOX_SUPPORT_MDM */
-		if (!knox) {
+		 
+		/* { SecProductFeature_KNOX.SEC_PRODUCT_FEATURE_KNOX_SUPPORT_MDM */ 
+		if(!knox) {
 			seq = clear_seq;
 			idx = clear_idx;
-		} else { //MDM edmaudit
+		}else { //MDM edmaudit
 			seq = clear_seq_knox;
 			idx = clear_idx_knox;
 		}
 		/* } SecProductFeature_KNOX.SEC_PRODUCT_FEATURE_KNOX_SUPPORT_MDM */
-
+		
 		prev = 0;
 		while (seq < log_next_seq) {
 			struct printk_log *msg = log_from_idx(idx);
@@ -1395,10 +1379,10 @@ static int syslog_print_all(char __user *buf, int size, bool clear, bool knox)
 			idx = log_next(idx);
 			seq++;
 		}
-
+		
 		/* { SecProductFeature_KNOX.SEC_PRODUCT_FEATURE_KNOX_SUPPORT_MDM */
 		/* move first record forward until length fits into the buffer */
-		if (!knox) {
+		if(!knox) {
 			seq = clear_seq;
 			idx = clear_idx;
 		} else { // MDM edmaudit
@@ -1626,7 +1610,7 @@ static void call_console_drivers(int level,
 {
 	struct console *con;
 
-	trace_console_rcuidle(text, len);
+	trace_console(text, len);
 
 	if (level >= console_loglevel && !ignore_loglevel)
 		return;
@@ -3396,8 +3380,9 @@ void show_regs_print_info(const char *log_lvl)
 {
 	dump_stack_print_info(log_lvl);
 
-	printk("%stask: %p task.stack: %p\n",
-	       log_lvl, current, task_stack_page(current));
+	printk("%stask: %p ti: %p task.ti: %p\n",
+	       log_lvl, current, current_thread_info(),
+	       task_thread_info(current));
 }
 
 #endif

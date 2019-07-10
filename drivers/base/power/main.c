@@ -100,7 +100,6 @@ void device_pm_sleep_init(struct device *dev)
 	dev->power.is_suspended = false;
 	dev->power.is_noirq_suspended = false;
 	dev->power.is_late_suspended = false;
-	dev->power.is_rpm_disabled = false;
 	init_completion(&dev->power.completion);
 	complete_all(&dev->power.completion);
 	dev->power.wakeup = NULL;
@@ -131,7 +130,6 @@ void device_pm_add(struct device *dev)
 {
 	pr_debug("PM: Adding info for %s:%s\n",
 		 dev->bus ? dev->bus->name : "No Bus", dev_name(dev));
-	device_pm_check_callbacks(dev);
 	mutex_lock(&dpm_list_mtx);
 	if (dev->parent && dev->parent->power.is_prepared)
 		dev_warn(dev, "parent %s should not be sleeping\n",
@@ -154,7 +152,6 @@ void device_pm_remove(struct device *dev)
 	mutex_unlock(&dpm_list_mtx);
 	device_wakeup_disable(dev);
 	pm_runtime_remove(dev);
-	device_pm_check_callbacks(dev);
 }
 
 /**
@@ -381,39 +378,16 @@ static void dpm_show_time(ktime_t starttime, pm_message_t state, char *info)
 		usecs / USEC_PER_MSEC, usecs % USEC_PER_MSEC);
 }
 
-#if defined(CONFIG_SEC_NAD_BALANCER) && defined(CONFIG_SEC_FACTORY)
-extern void report_sleep_info(struct device *dev, pm_message_t state,
-		       unsigned long long usec);
-
-static void sec_nad_debug_report(struct device *dev, ktime_t calltime,
-				  pm_message_t state)
-{
-	ktime_t rettime;
-	s64 nsecs;
-
-	rettime = ktime_get();
-	nsecs = (s64) ktime_to_ns(ktime_sub(rettime, calltime));
-
-	report_sleep_info(dev, state, (unsigned long long)nsecs >> 10);
-}
-#endif
-
 static int dpm_run_callback(pm_callback_t cb, struct device *dev,
 			    pm_message_t state, char *info)
 {
 	ktime_t calltime;
-#if defined(CONFIG_SEC_NAD_BALANCER) && defined(CONFIG_SEC_FACTORY)
-	ktime_t nad_calltime;
-#endif
 	int error;
 
 	if (!cb)
 		return 0;
 
 	calltime = initcall_debug_start(dev);
-#if defined(CONFIG_SEC_NAD_BALANCER) && defined(CONFIG_SEC_FACTORY)
-	nad_calltime = ktime_get();
-#endif
 
 	pm_dev_dbg(dev, state, info);
 	trace_device_pm_callback_start(dev, info, state.event);
@@ -424,9 +398,6 @@ static int dpm_run_callback(pm_callback_t cb, struct device *dev,
 	suspend_report_result(cb, error);
 
 	initcall_debug_report(dev, calltime, error, state, info);
-#if defined(CONFIG_SEC_NAD_BALANCER) && defined(CONFIG_SEC_FACTORY)
-	sec_nad_debug_report(dev, nad_calltime, state);
-#endif
 
 	return error;
 }
@@ -783,10 +754,7 @@ static int device_resume(struct device *dev, pm_message_t state, bool async)
 
 	if (dev->power.direct_complete) {
 		/* Match the pm_runtime_disable() in __device_suspend(). */
-		if (dev->power.is_rpm_disabled) {
-			pm_runtime_enable(dev);
-			dev->power.is_rpm_disabled = false;
-		}
+		pm_runtime_enable(dev);
 		goto Complete;
 	}
 
@@ -1064,8 +1032,6 @@ static int __device_suspend_noirq(struct device *dev, pm_message_t state, bool a
 	TRACE_DEVICE(dev);
 	TRACE_SUSPEND(0);
 
-	dpm_wait_for_children(dev, async);
-
 	if (async_error)
 		goto Complete;
 
@@ -1076,6 +1042,8 @@ static int __device_suspend_noirq(struct device *dev, pm_message_t state, bool a
 
 	if (dev->power.syscore || dev->power.direct_complete)
 		goto Complete;
+
+	dpm_wait_for_children(dev, async);
 
 	if (dev->pm_domain) {
 		info = "noirq power domain ";
@@ -1211,8 +1179,6 @@ static int __device_suspend_late(struct device *dev, pm_message_t state, bool as
 
 	__pm_runtime_disable(dev, false);
 
-	dpm_wait_for_children(dev, async);
-
 	if (async_error)
 		goto Complete;
 
@@ -1223,6 +1189,8 @@ static int __device_suspend_late(struct device *dev, pm_message_t state, bool as
 
 	if (dev->power.syscore || dev->power.direct_complete)
 		goto Complete;
+
+	dpm_wait_for_children(dev, async);
 
 	if (dev->pm_domain) {
 		info = "late power domain ";
@@ -1424,12 +1392,10 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 	if (dev->power.direct_complete) {
 		if (pm_runtime_status_suspended(dev)) {
 			pm_runtime_disable(dev);
-			dev->power.is_rpm_disabled = true;
 			if (pm_runtime_status_suspended(dev))
 				goto Complete;
 
 			pm_runtime_enable(dev);
-			dev->power.is_rpm_disabled = false;
 		}
 		dev->power.direct_complete = false;
 	}
@@ -1618,11 +1584,6 @@ static int device_prepare(struct device *dev, pm_message_t state)
 
 	dev->power.wakeup_path = device_may_wakeup(dev);
 
-	if (dev->power.no_pm_callbacks) {
-		ret = 1;	/* Let device go direct_complete */
-		goto unlock;
-	}
-
 	if (dev->pm_domain) {
 		info = "preparing power domain ";
 		callback = dev->pm_domain->ops.prepare;
@@ -1645,7 +1606,6 @@ static int device_prepare(struct device *dev, pm_message_t state)
 	if (callback)
 		ret = callback(dev);
 
-unlock:
 	device_unlock(dev);
 
 	if (ret < 0) {
@@ -1774,30 +1734,3 @@ void dpm_for_each_dev(void *data, void (*fn)(struct device *, void *))
 	device_pm_unlock();
 }
 EXPORT_SYMBOL_GPL(dpm_for_each_dev);
-
-static bool pm_ops_is_empty(const struct dev_pm_ops *ops)
-{
-	if (!ops)
-		return true;
-
-	return !ops->prepare &&
-	       !ops->suspend &&
-	       !ops->suspend_late &&
-	       !ops->suspend_noirq &&
-	       !ops->resume_noirq &&
-	       !ops->resume_early &&
-	       !ops->resume &&
-	       !ops->complete;
-}
-
-void device_pm_check_callbacks(struct device *dev)
-{
-	spin_lock_irq(&dev->power.lock);
-	dev->power.no_pm_callbacks =
-		(!dev->bus || pm_ops_is_empty(dev->bus->pm)) &&
-		(!dev->class || pm_ops_is_empty(dev->class->pm)) &&
-		(!dev->type || pm_ops_is_empty(dev->type->pm)) &&
-		(!dev->pm_domain || pm_ops_is_empty(&dev->pm_domain->ops)) &&
-		(!dev->driver || pm_ops_is_empty(dev->driver->pm));
-	spin_unlock_irq(&dev->power.lock);
-}

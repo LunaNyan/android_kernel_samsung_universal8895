@@ -50,6 +50,9 @@ enum subsystem {
 #endif
 
 struct sec_ts_data *ts_dup;
+#ifdef CONFIG_EPEN_WACOM_W9018
+extern void epen_disable_mode(int mode);
+#endif
 
 #ifdef USE_RESET_DURING_POWER_ON
 static void sec_ts_reset_work(struct work_struct *work);
@@ -264,6 +267,9 @@ static ssize_t secure_touch_enable_store(struct device *dev,
 		/* Release All Finger */
 		sec_ts_unlocked_release_all_finger(ts);
 
+#ifdef CONFIG_EPEN_WACOM_W9018
+		epen_disable_mode(1);
+#endif
 		/* Release prohibited touch by wacom / grace concept */
 		set_spen_mode(0);
 
@@ -320,6 +326,10 @@ static ssize_t secure_touch_enable_store(struct device *dev,
 					__func__);
 			return -EIO;
 		}
+
+#ifdef CONFIG_EPEN_WACOM_W9018
+		epen_disable_mode(0);
+#endif
 	} else {
 		input_err(true, &ts->client->dev, "%s: unsupport value:%d\n", __func__, data);
 		return -EINVAL;
@@ -1502,19 +1512,13 @@ static ssize_t sec_ts_regread_show(struct device *dev, struct device_attribute *
 
 	disable_irq(ts->client->irq);
 
-	mutex_lock(&ts->device_mutex);
-
-	if ((lv1_readsize <= 0) || (lv1_readsize > PAGE_SIZE)) {
-		input_err(true, &ts->client->dev, "%s: invalid lv1_readsize = %d\n",
-						__func__, lv1_readsize);
-		lv1_readsize = 0;
+	read_lv1_buff = kzalloc(lv1_readsize, GFP_KERNEL);
+	if (!read_lv1_buff) {
+		input_err(true, &ts->client->dev, "%s kzalloc failed\n", __func__);
 		goto malloc_err;
 	}
 
-	read_lv1_buff = kzalloc(lv1_readsize, GFP_KERNEL);
-	if (!read_lv1_buff)
-		goto malloc_err;
-
+	mutex_lock(&ts->device_mutex);
 	remain = lv1_readsize;
 	offset = 0;
 	do {
@@ -2817,7 +2821,9 @@ void trustedui_mode_on(void){
 		return;
 
 	sec_ts_unlocked_release_all_finger(tsp_info);
-
+#ifdef CONFIG_EPEN_WACOM_W9018
+	epen_disable_mode(1);
+#endif
 	/* Release prohibited touch by wacom / grace concept */
 	set_spen_mode(0);
 }
@@ -2825,6 +2831,10 @@ void trustedui_mode_on(void){
 void trustedui_mode_off(void){
 	if (!tsp_info)
 		return;
+
+#ifdef CONFIG_EPEN_WACOM_W9018
+	epen_disable_mode(0);
+#endif
 }
 #endif
 

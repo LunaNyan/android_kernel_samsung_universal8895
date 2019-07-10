@@ -52,10 +52,9 @@
 #include <net/dst.h>
 
 /**
- *	sk_filter_trim_cap - run a packet through a socket filter
+ *	sk_filter - run a packet through a socket filter
  *	@sk: sock associated with &sk_buff
  *	@skb: buffer to filter
- *	@cap: limit on how short the eBPF program may trim the packet
  *
  * Run the eBPF program and then cut skb->data to correct size returned by
  * the program. If pkt_len is 0 we toss packet. If skb->len is smaller
@@ -64,7 +63,7 @@
  * be accepted or -EPERM if the packet should be tossed.
  *
  */
-int sk_filter_trim_cap(struct sock *sk, struct sk_buff *skb, unsigned int cap)
+int sk_filter(struct sock *sk, struct sk_buff *skb)
 {
 	int err;
 	struct sk_filter *filter;
@@ -85,13 +84,14 @@ int sk_filter_trim_cap(struct sock *sk, struct sk_buff *skb, unsigned int cap)
 	filter = rcu_dereference(sk->sk_filter);
 	if (filter) {
 		unsigned int pkt_len = bpf_prog_run_save_cb(filter->prog, skb);
-		err = pkt_len ? pskb_trim(skb, max(cap, pkt_len)) : -EPERM;
+
+		err = pkt_len ? pskb_trim(skb, pkt_len) : -EPERM;
 	}
 	rcu_read_unlock();
 
 	return err;
 }
-EXPORT_SYMBOL(sk_filter_trim_cap);
+EXPORT_SYMBOL(sk_filter);
 
 static u64 __skb_get_pay_offset(u64 ctx, u64 a, u64 x, u64 r4, u64 r5)
 {
@@ -1275,7 +1275,9 @@ static u64 bpf_skb_store_bytes(u64 r1, u64 r2, u64 r3, u64 r4, u64 flags)
 	 */
 	if (unlikely((u32) offset > 0xffff || len > sizeof(buf)))
 		return -EFAULT;
-	if (unlikely(skb_try_make_writable(skb, offset + len)))
+
+	if (unlikely(skb_cloned(skb) &&
+		     !skb_clone_writable(skb, offset + len)))
 		return -EFAULT;
 
 	ptr = skb_header_pointer(skb, offset, len, buf);
@@ -1319,7 +1321,8 @@ static u64 bpf_l3_csum_replace(u64 r1, u64 r2, u64 from, u64 to, u64 flags)
 	if (unlikely((u32) offset > 0xffff))
 		return -EFAULT;
 
-	if (unlikely(skb_try_make_writable(skb, offset + sizeof(sum))))
+	if (unlikely(skb_cloned(skb) &&
+		     !skb_clone_writable(skb, offset + sizeof(sum))))
 		return -EFAULT;
 
 	ptr = skb_header_pointer(skb, offset, sizeof(sum), &sum);
@@ -1364,7 +1367,9 @@ static u64 bpf_l4_csum_replace(u64 r1, u64 r2, u64 from, u64 to, u64 flags)
 
 	if (unlikely((u32) offset > 0xffff))
 		return -EFAULT;
-	if (unlikely(skb_try_make_writable(skb, offset + sizeof(sum))))
+
+	if (unlikely(skb_cloned(skb) &&
+		     !skb_clone_writable(skb, offset + sizeof(sum))))
 		return -EFAULT;
 
 	ptr = skb_header_pointer(skb, offset, sizeof(sum), &sum);
@@ -1549,13 +1554,6 @@ bool bpf_helper_changes_skb_data(void *func)
 		return true;
 	if (func == bpf_skb_vlan_pop)
 		return true;
-	if (func == bpf_skb_store_bytes)
-		return true;
-	if (func == bpf_l3_csum_replace)
-		return true;
-	if (func == bpf_l4_csum_replace)
-		return true;
-
 	return false;
 }
 

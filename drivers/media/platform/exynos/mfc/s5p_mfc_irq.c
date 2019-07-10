@@ -205,7 +205,7 @@ static void mfc_handle_frame_copy_timestamp(struct s5p_mfc_ctx *ctx)
 	}
 
 	ref_mb = s5p_mfc_find_buf_vb(&ctx->buf_queue_lock,
-			&ctx->ref_buf_queue, dec_y_addr);
+			&dec->ref_buf_queue, dec_y_addr);
 	if (ref_mb) {
 		memcpy(&ref_mb->vb.timestamp,
 				&src_mb->vb.timestamp,
@@ -306,7 +306,7 @@ static void mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 		(s5p_mfc_get_warn(err) == S5P_FIMV_ERR_BROKEN_LINK)) {
 
 		ref_mb = s5p_mfc_find_move_buf_vb(&ctx->buf_queue_lock,
-				&ctx->dst_buf_queue, &ctx->ref_buf_queue, dspl_y_addr, released_flag);
+				&ctx->dst_buf_queue, &dec->ref_buf_queue, dspl_y_addr, released_flag);
 		if (ref_mb) {
 			mfc_debug(2, "Listing: %d\n", ref_mb->vb.vb2_buf.index);
 			/* Check if this is the buffer we're looking for */
@@ -329,7 +329,7 @@ static void mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 		}
 	} else {
 		ref_mb = s5p_mfc_find_del_buf_vb(&ctx->buf_queue_lock,
-				&ctx->ref_buf_queue, dspl_y_addr);
+				&dec->ref_buf_queue, dspl_y_addr);
 		if (ref_mb) {
 			mfc_debug(2, "Listing: %d\n", ref_mb->vb.vb2_buf.index);
 			/* Check if this is the buffer we're looking for */
@@ -543,7 +543,7 @@ static void mfc_handle_ref_frame(struct s5p_mfc_ctx *ctx)
 
 	/* Try to search decoded address in whole dst queue */
 	dst_mb = s5p_mfc_find_move_buf_vb_used(&ctx->buf_queue_lock,
-			&ctx->ref_buf_queue, &ctx->dst_buf_queue, dec_addr);
+			&dec->ref_buf_queue, &ctx->dst_buf_queue, dec_addr);
 	if (dst_mb) {
 		mfc_debug(2, "Found in dst queue = 0x%08llx, buf = 0x%08llx\n",
 				dec_addr, s5p_mfc_mem_get_daddr_vb(&dst_mb->vb.vb2_buf, 0));
@@ -553,33 +553,6 @@ static void mfc_handle_ref_frame(struct s5p_mfc_ctx *ctx)
 	} else {
 		mfc_debug(2, "Can't find buffer for addr = 0x%08llx\n", dec_addr);
 	}
-}
-
-static void mfc_handle_reuse_buffer(struct s5p_mfc_ctx *ctx)
-{
-	struct s5p_mfc_dev *dev = ctx->dev;
-	struct s5p_mfc_dec *dec = ctx->dec_priv;
-	unsigned int prev_flag, released_flag = 0;
-	int i;
-
-	prev_flag = dec->dynamic_used;
-	dec->dynamic_used = s5p_mfc_get_dec_used_flag();
-	released_flag = prev_flag & (~dec->dynamic_used);
-
-	if (!released_flag)
-		return;
-
-	/* Reuse not referenced buf anymore */
-	for (i = 0; i < MFC_MAX_DPBS; i++)
-		if (released_flag & (1 << i))
-			if (s5p_mfc_move_reuse_buffer(ctx, i))
-				released_flag &= ~(1 << i);
-
-	/* Not reused buffer should be released when there is a display frame */
-	dec->dec_only_release_flag |= released_flag;
-	for (i = 0; i < MFC_MAX_DPBS; i++)
-		if (released_flag & (1 << i))
-			clear_bit(i, &dec->available_dpb);
 }
 
 /* Handle frame decoding interrupt */
@@ -697,25 +670,12 @@ static void mfc_handle_frame(struct s5p_mfc_ctx *ctx,
 		}
 	}
 
-	/* Detection for QoS weight */
-	if (!dec->super64_bframe && IS_SUPER64_BFRAME(ctx, s5p_mfc_get_lcu_size(),
-				s5p_mfc_get_dec_frame_type())) {
-		dec->super64_bframe = 1;
-		s5p_mfc_qos_on(ctx);
-	}
-
 	switch (dst_frame_status) {
+	case S5P_FIMV_DEC_STATUS_DECODING_ONLY:
+		dec->dynamic_used |= s5p_mfc_get_dec_used_flag();
+		/* Fall through */
 	case S5P_FIMV_DEC_STATUS_DECODING_DISPLAY:
 		mfc_handle_ref_frame(ctx);
-		break;
-	case S5P_FIMV_DEC_STATUS_DECODING_ONLY:
-		mfc_handle_ref_frame(ctx);
-		/*
-		 * Some cases can have many decoding only frames like VP9
-		 * alt-ref frame. So need handling release buffer
-		 * because of DPB full.
-		 */
-		mfc_handle_reuse_buffer(ctx);
 		break;
 	default:
 		break;
@@ -768,9 +728,6 @@ static void mfc_handle_frame(struct s5p_mfc_ctx *ctx,
 			dec->remained_size = src_mb->vb.vb2_buf.planes[0].bytesused
 					- dec->consumed;
 			dec->has_multiframe = 1;
-
-			MFC_TRACE_CTX("** consumed:%ld, remained:%ld, addr:0x%08llx\n",
-				dec->consumed, dec->remained_size, dec->y_addr_for_pb);
 			/* Do not move src buffer to done_list */
 			goto leave_handle_frame;
 		}
@@ -996,7 +953,7 @@ static int mfc_handle_stream(struct s5p_mfc_ctx *ctx)
 		}
 
 		ref_mb = s5p_mfc_find_del_buf_raw(&ctx->buf_queue_lock,
-			&ctx->ref_buf_queue, enc_addr[0]);
+			&enc->ref_buf_queue, enc_addr[0]);
 		if (ref_mb) {
 			vb2_buffer_done(&ref_mb->vb.vb2_buf, VB2_BUF_STATE_DONE);
 
@@ -1045,7 +1002,7 @@ static int mfc_handle_stream(struct s5p_mfc_ctx *ctx)
 		 (ctx->state == MFCINST_RUNNING_BUF_FULL))) {
 
 		s5p_mfc_move_first_buf_used(&ctx->buf_queue_lock,
-			&ctx->ref_buf_queue, &ctx->src_buf_queue, MFC_QUEUE_ADD_BOTTOM);
+			&enc->ref_buf_queue, &ctx->src_buf_queue, MFC_QUEUE_ADD_BOTTOM);
 
 		/* slice_type = 4 && strm_size = 0, skipped enable
 		   should be considered */
@@ -1055,7 +1012,7 @@ static int mfc_handle_stream(struct s5p_mfc_ctx *ctx)
 		mfc_debug(2, "slice_type: %d, ctx->state: %d\n", slice_type, ctx->state);
 		mfc_debug(2, "enc src count: %d, enc ref count: %d\n",
 			  s5p_mfc_get_queue_count(&ctx->buf_queue_lock, &ctx->src_buf_queue),
-			  s5p_mfc_get_queue_count(&ctx->buf_queue_lock, &ctx->ref_buf_queue));
+			  s5p_mfc_get_queue_count(&ctx->buf_queue_lock, &enc->ref_buf_queue));
 	}
 
 	return 0;
@@ -1097,12 +1054,12 @@ static inline void mfc_handle_error(struct s5p_mfc_ctx *ctx,
 			if (src_mb) {
 				stream_vir = src_mb->vir_addr;
 				strm_size = src_mb->vb.vb2_buf.planes[0].bytesused;
-				if (strm_size > 640)
-					strm_size = 640;
+				if (strm_size > 32)
+					strm_size = 32;
 
 				if (stream_vir && strm_size)
 					print_hex_dump(KERN_ERR, "No header: ",
-							DUMP_PREFIX_ADDRESS, 32, 4,
+							DUMP_PREFIX_ADDRESS, strm_size, 0,
 							stream_vir, strm_size, false);
 
 				vb2_buffer_done(&src_mb->vb.vb2_buf, VB2_BUF_STATE_DONE);
@@ -1298,20 +1255,9 @@ irqreturn_t s5p_mfc_top_half_irq(int irq, void *priv)
 
 	reason = s5p_mfc_get_int_reason();
 	err = s5p_mfc_get_int_err();
-
-	dev->last_int = reason;
-	dev->last_int_time = ktime_to_timeval(ktime_get());
-
-	if ((reason == S5P_FIMV_R2H_CMD_SEQ_DONE_RET) ||
-		(reason == S5P_FIMV_R2H_CMD_INIT_BUFFERS_RET) ||
-		(reason == S5P_FIMV_R2H_CMD_FRAME_DONE_RET) ||
-		(reason == S5P_FIMV_R2H_CMD_QUEUE_DONE_RET))
-		ctx->frame_cnt++;
-
 	mfc_debug(2, "[c:%d] Int reason: %d (err: %d)\n",
 			dev->curr_ctx, reason, err);
 	MFC_TRACE_CTX("<< INT(top): %d\n", reason);
-	MFC_TRACE_LOG_CTX("I%d", reason);
 
 	return IRQ_WAKE_THREAD;
 }

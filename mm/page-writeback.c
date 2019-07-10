@@ -372,13 +372,12 @@ static unsigned long global_dirtyable_memory(void)
  */
 static void domain_dirty_limits(struct dirty_throttle_control *dtc)
 {
-	unsigned long available_memory = dtc->avail;
+	const unsigned long available_memory = dtc->avail;
 	struct dirty_throttle_control *gdtc = mdtc_gdtc(dtc);
 	unsigned long bytes = vm_dirty_bytes;
 	unsigned long bg_bytes = dirty_background_bytes;
-	/* convert ratios to per-PAGE_SIZE for higher precision */
-	unsigned long ratio = (vm_dirty_ratio * PAGE_SIZE) / 100;
-	unsigned long bg_ratio = (dirty_background_ratio * PAGE_SIZE) / 100;
+	unsigned long ratio = vm_dirty_ratio;
+	unsigned long bg_ratio = dirty_background_ratio;
 	unsigned long thresh;
 	unsigned long bg_thresh;
 	struct task_struct *tsk;
@@ -390,36 +389,26 @@ static void domain_dirty_limits(struct dirty_throttle_control *dtc)
 		/*
 		 * The byte settings can't be applied directly to memcg
 		 * domains.  Convert them to ratios by scaling against
-		 * globally available memory.  As the ratios are in
-		 * per-PAGE_SIZE, they can be obtained by dividing bytes by
-		 * number of pages.
+		 * globally available memory.
 		 */
 		if (bytes)
-			ratio = min(DIV_ROUND_UP(bytes, global_avail),
-				    PAGE_SIZE);
+			ratio = min(DIV_ROUND_UP(bytes, PAGE_SIZE) * 100 /
+				    global_avail, 100UL);
 		if (bg_bytes)
-			bg_ratio = min(DIV_ROUND_UP(bg_bytes, global_avail),
-				       PAGE_SIZE);
+			bg_ratio = min(DIV_ROUND_UP(bg_bytes, PAGE_SIZE) * 100 /
+				       global_avail, 100UL);
 		bytes = bg_bytes = 0;
 	}
 
 	if (bytes)
 		thresh = DIV_ROUND_UP(bytes, PAGE_SIZE);
 	else
-		thresh = (ratio * available_memory) / PAGE_SIZE;
-
-#if defined(CONFIG_MAX_DIRTY_THRESH_PAGES) && CONFIG_MAX_DIRTY_THRESH_PAGES > 0
-	if (!bytes && thresh > CONFIG_MAX_DIRTY_THRESH_PAGES) {
-		thresh = CONFIG_MAX_DIRTY_THRESH_PAGES;
-		/* reduce available memory not to make bg_thresh too high */
-		available_memory = thresh * PAGE_SIZE / ratio;
-	}
-#endif
+		thresh = (ratio * available_memory) / 100;
 
 	if (bg_bytes)
 		bg_thresh = DIV_ROUND_UP(bg_bytes, PAGE_SIZE);
 	else
-		bg_thresh = (bg_ratio * available_memory) / PAGE_SIZE;
+		bg_thresh = (bg_ratio * available_memory) / 100;
 
 	if (bg_thresh >= thresh)
 		bg_thresh = thresh / 2;
@@ -473,11 +462,6 @@ static unsigned long zone_dirty_limit(struct zone *zone)
 			zone_memory / global_dirtyable_memory();
 	else
 		dirty = vm_dirty_ratio * zone_memory / 100;
-
-#if defined(CONFIG_MAX_DIRTY_THRESH_PAGES) && CONFIG_MAX_DIRTY_THRESH_PAGES > 0
-	if (!vm_dirty_bytes && dirty > CONFIG_MAX_DIRTY_THRESH_PAGES)
-		dirty = CONFIG_MAX_DIRTY_THRESH_PAGES;
-#endif
 
 	if (tsk->flags & PF_LESS_THROTTLE || rt_task(tsk))
 		dirty += dirty / 4;
@@ -1553,9 +1537,6 @@ static inline void wb_dirty_limits(struct dirty_throttle_control *dtc)
  * If we're over `background_thresh' then the writeback threads are woken to
  * perform some writeout.
  */
-
-SIO_PATCH_VERSION(prevent_infinite_writeback, 1, 0, "");
-
 static void balance_dirty_pages(struct address_space *mapping,
 				struct bdi_writeback *wb,
 				unsigned long pages_dirtied)
@@ -1774,11 +1755,6 @@ pause:
 					  period,
 					  pause,
 					  start_time);
-
-		/* Do not sleep if the backing device is removed */
-		if (unlikely(!bdi->dev))
-			return;
-
 		/* Just collecting approximate value. No lock required. */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 18, 0))
 		bdi->last_thresh = thresh;

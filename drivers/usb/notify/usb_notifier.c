@@ -156,8 +156,7 @@ err:
 }
 
 #if defined(CONFIG_CCIC_NOTIFIER)
-static void usb_hs_regulator_onoff(struct usb_notifier_platform_data *pdata,
-				   unsigned int onoff)
+static void usb_hs_regulator_onoff(struct usb_notifier_platform_data *pdata, unsigned int onoff)
 {
 	struct regulator *avdd33_usb;
 	int ret;
@@ -190,8 +189,7 @@ static void usb_hs_regulator_onoff(struct usb_notifier_platform_data *pdata,
 	regulator_put(avdd33_usb);
 }
 
-static void usb_ss_regulator_onoff(struct usb_notifier_platform_data *pdata,
-				   bool onoff)
+static void usb_ss_regulator_onoff(struct usb_notifier_platform_data *pdata, bool onoff)
 {
 	struct regulator *vdd085_usb;
 	int ret;
@@ -199,7 +197,7 @@ static void usb_ss_regulator_onoff(struct usb_notifier_platform_data *pdata,
 	if (!pdata->ss_vdd) {
 		pr_err("%s ss_vdd is null\n", __func__);
 		return;
-	}
+	}	
 
 	vdd085_usb = regulator_get(NULL, pdata->ss_vdd);
 	if (IS_ERR(vdd085_usb) || vdd085_usb == NULL) {
@@ -224,8 +222,7 @@ static void usb_ss_regulator_onoff(struct usb_notifier_platform_data *pdata,
 	regulator_put(vdd085_usb);
 }
 
-static void usb_dp_regulator_onoff(struct usb_notifier_platform_data *pdata,
-				   unsigned int onoff)
+static void usb_dp_regulator_onoff(struct usb_notifier_platform_data *pdata, unsigned int onoff)
 {
 	struct regulator *vdd3p3_dp;
 	int ret;
@@ -263,7 +260,7 @@ static void usb_regulator_onoff(void *data, unsigned int onoff)
 	struct usb_notifier_platform_data *pdata =
 		(struct usb_notifier_platform_data *)(data);
 	pr_info("usb: %s - Turn %s (ldocontrol=%d, usb_ldo_off_working=%d)\n", __func__,
-		onoff ? "on":"off", pdata->usb_ldocontrol, pdata->usb_ldo_off_working);
+		onoff? "on":"off", pdata->usb_ldocontrol, pdata->usb_ldo_off_working);
 
 	if (pdata->usb_ldocontrol) {
 		if (onoff) {
@@ -291,6 +288,7 @@ static void usb_regulator_onoff(void *data, unsigned int onoff)
 	} else {
 		pr_err("%s: can't control\n", __func__);
 	}
+	return;
 }
 
 static void usb_ldo_off_control(struct work_struct *work)
@@ -360,40 +358,41 @@ end:
 static int ccic_usb_handle_notification(struct notifier_block *nb,
 		unsigned long action, void *data)
 {
-	CC_NOTI_USB_STATUS_TYPEDEF usb_status = *(CC_NOTI_USB_STATUS_TYPEDEF *)data;
+	CC_NOTI_USB_STATUS_TYPEDEF usb_status = * (CC_NOTI_USB_STATUS_TYPEDEF *)data;
 	struct otg_notify *o_notify = get_otg_notify();
 	struct usb_notifier_platform_data *pdata =
 		container_of(nb, struct usb_notifier_platform_data, ccic_usb_nb);
 
-	if (usb_status.dest != CCIC_NOTIFY_DEV_USB)
+	if(usb_status.dest != CCIC_NOTIFY_DEV_USB) {
 		return 0;
-
-	switch (usb_status.drp) {
-	case USB_STATUS_NOTIFY_ATTACH_DFP:
-		pr_info("%s: Turn On Host(DFP)\n", __func__);
-		send_otg_notify(o_notify, NOTIFY_EVENT_HOST, 1);
-		pdata->is_host = 1;
-		break;
-	case USB_STATUS_NOTIFY_ATTACH_UFP:
-		pr_info("%s: Turn On Device(UFP)\n", __func__);
-		send_otg_notify(o_notify, NOTIFY_EVENT_VBUS, 1);
-		if (is_blocked(o_notify, NOTIFY_BLOCK_TYPE_CLIENT))
-			return -EPERM;
-		break;
-	case USB_STATUS_NOTIFY_DETACH:
-		if (pdata->is_host) {
-			pr_info("%s: Turn Off Host(DFP)\n", __func__);
-			send_otg_notify(o_notify, NOTIFY_EVENT_HOST, 0);
-			pdata->is_host = 0;
-		} else {
-			pr_info("%s: Turn Off Device(UFP)\n", __func__);
-			send_otg_notify(o_notify, NOTIFY_EVENT_VBUS, 0);
-		}
-		break;
-	default:
-		pr_info("%s: unsupported DRP type : %d.\n", __func__, usb_status.drp);
-		break;
 	}
+
+	switch (usb_status.drp){
+		case USB_STATUS_NOTIFY_ATTACH_DFP:
+			pr_info("%s: Turn On Host(DFP)\n", __func__);
+			send_otg_notify(o_notify, NOTIFY_EVENT_HOST, 1);
+			pdata->is_host = 1;
+			break;
+		case USB_STATUS_NOTIFY_ATTACH_UFP:
+			pr_info("%s: Turn On Device(UFP)\n", __func__);
+			send_otg_notify(o_notify, NOTIFY_EVENT_VBUS, 1);
+			if(is_blocked(o_notify, NOTIFY_BLOCK_TYPE_CLIENT))
+				return -EPERM;
+			break;
+		case USB_STATUS_NOTIFY_DETACH:
+			if(pdata->is_host) {
+				pr_info("%s: Turn Off Host(DFP)\n", __func__);
+				send_otg_notify(o_notify, NOTIFY_EVENT_HOST, 0);
+				pdata->is_host = 0;
+			} else {
+				pr_info("%s: Turn Off Device(UFP)\n", __func__);
+				send_otg_notify(o_notify, NOTIFY_EVENT_VBUS, 0);
+			}
+			break;
+		default:
+			pr_info("%s: unsupported DRP type : %d.\n", __func__, usb_status.drp);
+			break;
+		}
 	return 0;
 }
 #elif defined(CONFIG_MUIC_NOTIFIER)
@@ -492,11 +491,11 @@ static int muic_usb_handle_notification(struct notifier_block *nb,
 			pr_err("%s - ACTION Error!\n", __func__);
 		break;
 	case ATTACHED_DEV_GAMEPAD_MUIC:
-		if (action == MUIC_NOTIFY_CMD_DETACH)
+		if (action == MUIC_NOTIFY_CMD_DETACH) {
 			send_otg_notify(o_notify, NOTIFY_EVENT_GAMEPAD, 0);
-		else if (action == MUIC_NOTIFY_CMD_ATTACH)
+		} else if (action == MUIC_NOTIFY_CMD_ATTACH) {
 			send_otg_notify(o_notify, NOTIFY_EVENT_GAMEPAD, 1);
-		else
+		} else
 			pr_err("%s - ACTION Error!\n", __func__);
 		break;
 	default:
@@ -563,21 +562,24 @@ static int set_online(int event, int state)
 	if (!np_charger) {
 		pr_err("%s: failed to get the battery device node\n", __func__);
 		return 0;
-	}
-
-	if (!of_property_read_string(np_charger, "battery,charger_name",
-				(char const **)&charger_name)) {
-		pr_info("%s: charger_name = %s\n", __func__, charger_name);
 	} else {
-		pr_err("%s: failed to get the charger name\n", __func__);
-		return 0;
+		if (!of_property_read_string(np_charger, "battery,charger_name",
+					(char const **)&charger_name)) {
+			pr_info("%s: charger_name = %s\n", __func__,
+					charger_name);
+		} else {
+			pr_err("%s: failed to get the charger name\n",
+								 __func__);
+			return 0;
+		}
 	}
-	/* for KNOX DT charging */
-	pr_info("Knox Desktop connection state = %s\n", state ? "Connected" : "Disconnected");
+	// for KNOX DT charging
+	pr_info("Knox Desktop connection state = %s\n",
+			state ? "Connected" : "Disconnected");
 	if (state)
-		val.intval = SEC_BATTERY_CABLE_SMART_NOTG;
+		val.intval = POWER_SUPPLY_TYPE_SMART_NOTG;
 	else
-		val.intval = SEC_BATTERY_CABLE_NONE;
+		val.intval = POWER_SUPPLY_TYPE_BATTERY;
 
 	psy_do_property("battery", set,
 			POWER_SUPPLY_PROP_ONLINE, val);
@@ -611,7 +613,7 @@ static int exynos_set_peripheral(bool enable)
 	} else {
 		pr_info("%s usb detached\n", __func__);
 		check_usb_vbus_state(0);
-		set_ncm_ready(false);
+    set_ncm_ready(false);
 	}
 	return 0;
 }
@@ -627,18 +629,18 @@ static int usb_blocked_chg_control(int set)
 	if (!np_charger) {
 		pr_err("%s: failed to get the battery device node\n", __func__);
 		return 0;
-	}
-
-	if (!of_property_read_string(np_charger, "battery,charger_name",
-				(char const **)&charger_name)) {
-		pr_info("%s: charger_name = %s\n", __func__,
-				charger_name);
 	} else {
-		pr_err("%s: failed to get the charger name\n",  __func__);
-		return 0;
+		if (!of_property_read_string(np_charger, "battery,charger_name",
+					(char const **)&charger_name)) {
+			pr_info("%s: charger_name = %s\n", __func__,
+					charger_name);
+		} else {
+			pr_err("%s: failed to get the charger name\n",
+								 __func__);
+			return 0;
+		}
 	}
-
-	/* current setting for upsm */
+	//  current setting for upsm
 	pr_info("usb blocked : charing current set = %d\n", set);
 
 	if (set)
@@ -671,16 +673,13 @@ static struct otg_notify dwc_lsi_notify = {
 #if defined(CONFIG_BATTERY_SAMSUNG_V2)
 	.set_chg_current = usb_blocked_chg_control,
 #endif
-	.pre_peri_delay_us = 6,
-#if defined(CONFIG_USB_OTG_WHITELIST_FOR_MDM)
-	.sec_whitelist_enable = 0,
-#endif
 };
 
 static int usb_notifier_probe(struct platform_device *pdev)
 {
 	struct usb_notifier_platform_data *pdata = NULL;
 	int ret = 0;
+	struct otg_notify *o_notify;
 
 	if (pdev->dev.of_node) {
 		pdata = devm_kzalloc(&pdev->dev,
@@ -728,6 +727,7 @@ static int usb_notifier_probe(struct platform_device *pdev)
 	vbus_notifier_register(&pdata->vbus_nb, vbus_handle_notification,
 			       MUIC_NOTIFY_DEV_USB);
 #endif
+	o_notify = get_otg_notify();
 	dev_info(&pdev->dev, "usb notifier probe\n");
 	return 0;
 }

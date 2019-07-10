@@ -124,7 +124,7 @@ static int journal_submit_commit_record(journal_t *journal,
 	struct commit_header *tmp;
 	struct buffer_head *bh;
 	int ret;
-	struct timespec64 now = current_kernel_time64();
+	struct timespec now = current_kernel_time();
 
 	*cbh = NULL;
 
@@ -363,7 +363,6 @@ static void jbd2_block_tag_csum_set(journal_t *j, journal_block_tag_t *tag,
 	else
 		tag->t_checksum = cpu_to_be16(csum32);
 }
-
 /*
  * jbd2_journal_commit_transaction
  *

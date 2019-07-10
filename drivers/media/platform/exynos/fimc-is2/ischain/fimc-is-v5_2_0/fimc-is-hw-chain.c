@@ -19,8 +19,6 @@
 #if defined(CONFIG_SECURE_CAMERA_USE)
 #include <linux/smc.h>
 #endif
-#include <linux/videodev2.h>
-#include <linux/videodev2_exynos_camera.h>
 
 #include <asm/neon.h>
 
@@ -478,7 +476,6 @@ int fimc_is_hw_ischain_cfg(void *ischain_data)
 {
 	int ret = 0;
 	struct fimc_is_core *core;
-	struct fimc_is_resourcemgr *resourcemgr;
 	struct fimc_is_device_ischain *device;
 	struct fimc_is_device_sensor *sensor;
 	struct fimc_is_device_csi *csi;
@@ -490,9 +487,7 @@ int fimc_is_hw_ischain_cfg(void *ischain_data)
 	u32 isplp_backup = 0, isphq_backup = 0, cam_backup = 0;
 	u32 input_bns = 0, input_wobns = 1;
 	u32 input_3aaw = 0, input_3aa = 1;
-	u32 input_isplp = 0, input_isphq = 1;
 	u32 input_mcsc_src0;
-	int chain_config = 0; /* 0: pure bayer, 1: processed bayer */
 
 	BUG_ON(!ischain_data);
 
@@ -506,9 +501,6 @@ int fimc_is_hw_ischain_cfg(void *ischain_data)
 
 	csi = (struct fimc_is_device_csi *)v4l2_get_subdevdata(sensor->subdev_csi);
 	BUG_ON(!csi);
-
-	resourcemgr = device->resourcemgr;
-	chain_config = core->chain_config;
 
 	/* checked single/dual camera */
 	for (i = 0; i < FIMC_IS_STREAM_COUNT; i++)
@@ -547,6 +539,7 @@ int fimc_is_hw_ischain_cfg(void *ischain_data)
 	cam_backup = cam_val;
 	isplp_backup = isplp_val;
 	isphq_backup = isphq_val;
+
 	/*
 	 * 1 &2) Select BNS & WOBNS input
 	 *    CSIS0 : 0 (BACK) <= Always
@@ -554,118 +547,69 @@ int fimc_is_hw_ischain_cfg(void *ischain_data)
 	 *    CSIS2 : 2 (TELE)
 	 *    CSIS3 : 3 (IRIS)
 	 */
+	input_3aaw = 0;
+	input_3aa  = 1;
 
-	if (resourcemgr->hal_version == IS_HAL_VER_1_0 && chain_config) {
-		/* processed bayer */
-		input_3aaw = 1; /* WOBNS output -> 3AAW */
-		input_3aa  = 0; /* BNS output   -> 3AA  */
+	if (sensor_cnt > 1) {
+		/* PIP scenario */
+		input_bns = 0;
 
-		input_isplp = 1; /* 3AA  -> ISPLP */
-		input_isphq = 0; /* 3AAW -> ISPHQ */
+		if (test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[1].state))
+			&& !test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[2].state)))
+			input_wobns = 1;
+		else if (!test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[1].state))
+			&& test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[2].state)))
+			input_wobns = 2;
+		else
+			input_wobns = 1;
 
-		if (sensor_cnt > 1) {
-			/* PIP scenario */
-			input_bns = 0;
-
-			if (test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[1].state))
-					&& !test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[2].state)))
-				input_wobns = 1;
-			else if (!test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[1].state))
-					&& test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[2].state)))
-				input_wobns = 2;
-			else
-				input_wobns = 1;
-		} else {
-			/* SINGLE scenario */
-			switch (csi->instance) {
-			case 0:
-				input_bns = 0;
-				input_wobns = 1;
-				break;
-			case 1: /* Fall Through */
-			case 2:
-				input_bns = 0;
-				input_wobns = csi->instance;
-				break;
-			case 3:
-				/* Color IRIS */
-				input_bns = 0;
-				input_wobns = 1;
-				break;
-			default:
-				input_wobns = 1;
-				break;
-			}
+		if (test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[1].state))
+			&& test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[3].state))) {
+			/* Color IRIS */
+			input_3aaw = 1;
+			input_3aa  = 0;
 		}
 	} else {
-		/* pure bayer scenario */
-		input_3aaw = 0; /* BNS output   -> 3AAW */
-		input_3aa  = 1; /* WOBNS output -> 3AA  */
-
-		input_isplp = 0; /* 3AAW -> ISPLP */
-		input_isphq = 1; /* 3AA  -> ISPHQ */
-
-		if (sensor_cnt > 1) {
-			/* PIP scenario */
+		/* SINGLE scenario */
+		switch (csi->instance) {
+		case 0:
 			input_bns = 0;
+			input_wobns = 1;
+			break;
+		case 1:
+			input_bns = 0;
+			input_wobns = csi->instance;
 
-			if (test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[1].state))
-				&& !test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[2].state)))
-				input_wobns = 1;
-			else if (!test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[1].state))
-				&& test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[2].state)))
-				input_wobns = 2;
-			else
-				input_wobns = 1;
-
-			if (test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[1].state))
-				&& test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[3].state))) {
-				/* Color IRIS */
+			if (test_bit(FIMC_IS_GROUP_OTF_INPUT, &device->group_3aa.state)) {
+				/* VT call, Color IRIS */
 				input_3aaw = 1;
 				input_3aa  = 0;
+			} else {
+				/* PIP */
+				input_3aaw = 0;
+				input_3aa  = 1;
 			}
-		} else {
-			/* SINGLE scenario */
-			switch (csi->instance) {
-			case 0:
-				input_bns = 0;
-				input_wobns = 1;
-				break;
-			case 1:
-				input_bns = 0;
-				input_wobns = csi->instance;
+			break;
+		case 2:
+			input_bns = 0;
+			input_wobns = csi->instance;
+			break;
+		case 3:
+			/* Color IRIS */
+			input_bns = 0;
+			input_wobns = 1;
 
-				if (test_bit(FIMC_IS_GROUP_OTF_INPUT, &device->group_3aa.state)) {
-					/* VT call, Color IRIS */
-					input_3aaw = 1;
-					input_3aa  = 0;
-				} else {
-					/* PIP */
-					input_3aaw = 0;
-					input_3aa  = 1;
-				}
-				break;
-			case 2:
-				input_bns = 0;
-				input_wobns = csi->instance;
-				break;
-			case 3:
-				/* Color IRIS */
-				input_bns = 0;
-				input_wobns = 1;
-
-				input_3aaw = 1;
-				input_3aa  = 0;
-				break;
-			default:
-				input_wobns = 1;
-				break;
-			}
+			input_3aaw = 1;
+			input_3aa  = 0;
+			break;
+		default:
+			input_wobns = 1;
+			break;
 		}
 	}
-	info_itfc("%s: input[bns:%d, wobns:%d], input[3aaw:%d, 3aa:%d], sensor_cnt(%d), chain_config(%d)\n",
+	info_itfc("%s: input[bns:%d, wobns:%d], input[3aaw:%d, 3aa:%d], sensor_cnt(%d)\n",
 		__func__, input_bns, input_wobns,
-		input_3aaw, input_3aa, sensor_cnt, chain_config);
+		input_3aaw, input_3aa, sensor_cnt);
 	cam_val = fimc_is_hw_set_field_value(cam_val,
 		&sysreg_cam_fields[SYSREG_CAM_F_GLUEMUX_BNS_VAL], input_bns);
 	cam_val = fimc_is_hw_set_field_value(cam_val,
@@ -687,7 +631,7 @@ int fimc_is_hw_ischain_cfg(void *ischain_data)
 	 *    3AA(3AA1)  : 1
 	 */
 	isplp_val = fimc_is_hw_set_field_value(isplp_val,
-		&sysreg_isplp_fields[SYSREG_ISPLP_F_GLUEMUX_ISPLP_SEL], input_isplp);
+		&sysreg_isplp_fields[SYSREG_ISPLP_F_GLUEMUX_ISPLP_SEL], 0);
 
 	/*
 	 * 5) Select ISPHQ(ISP1) input
@@ -695,7 +639,7 @@ int fimc_is_hw_ischain_cfg(void *ischain_data)
 	 *    3AA(3AA1)  : 1 <= Always
 	 */
 	isphq_val = fimc_is_hw_set_field_value(isphq_val,
-		&sysreg_isphq_fields[SYSREG_ISPHQ_F_GLUEMUX_ISPHQ_SEL], input_isphq);
+		&sysreg_isphq_fields[SYSREG_ISPHQ_F_GLUEMUX_ISPHQ_SEL], 1);
 
 	/*
 	 * 6) Select MC-Scaler SRC0 input
@@ -1967,58 +1911,4 @@ void __iomem *fimc_is_hw_get_sysreg(ulong core_regs)
 		err_itfc("%s: core_regs(%p)\n", __func__, (void *)core_regs);
 
 	return ioremap_nocache(SYSREG_CAM_BASE_ADDR, 0x10000);
-}
-
-u32 fimc_is_hw_g_state(void __iomem *regs, u32 hw_id)
-{
-	u32 reg_val = 0, sfr_offset;
-
-	if (!regs) {
-		err_itfc("[ID:%d]%s: regs = NULL\n", hw_id, __func__);
-		return 0;
-	}
-
-	switch (hw_id) {
-	case DEV_HW_3AA0: /* 3AAW */
-	case DEV_HW_3AA1:
-	case DEV_HW_ISP0: /* ISPLP */
-	case DEV_HW_ISP1: /* ISPHQ */
-		sfr_offset = 0x0; /* global_enable */
-		reg_val = readl(regs + sfr_offset);
-		info_itfc("[ID:%d]%s: [0x%04X:0x%08X]\n", hw_id, __func__, sfr_offset, reg_val);
-		/* fall through */
-	case DEV_HW_TPU0:
-	case DEV_HW_TPU1:
-		sfr_offset = 0x24; /* idleness_status */
-		reg_val = readl(regs + sfr_offset);
-		info_itfc("[ID:%d]%s: [0x%04X:0x%08X]\n", hw_id, __func__, sfr_offset, reg_val);
-		break;
-	case DEV_HW_MCSC0:
-		sfr_offset = 0x0; /* global_enable */
-		reg_val = readl(regs + sfr_offset);
-		info_itfc("[ID:%d]%s: [0x%04X:0x%08X]\n", hw_id, __func__, sfr_offset, reg_val);
-
-		sfr_offset = 0x794; /* running_status */
-		reg_val = readl(regs + sfr_offset);
-		info_itfc("[ID:%d]%s: [0x%04X:0x%08X]\n", hw_id, __func__, sfr_offset, reg_val);
-		break;
-	case DEV_HW_MCSC1:
-		sfr_offset = 0x4; /* global_enable */
-		reg_val = readl(regs + sfr_offset);
-		info_itfc("[ID:%d]%s: [0x%04X:0x%08X]\n", hw_id, __func__, sfr_offset, reg_val);
-
-		sfr_offset = 0x794; /* running_status */
-		reg_val = readl(regs + sfr_offset);
-		info_itfc("[ID:%d]%s: [0x%04X:0x%08X]\n", hw_id, __func__, sfr_offset, reg_val);
-		break;
-	case DEV_HW_VRA:
-		sfr_offset = 0x3010; /* idleness_status */
-		reg_val = readl(regs + sfr_offset);
-		info_itfc("[ID:%d]%s: [0x%04X:0x%08X]\n", hw_id, __func__, sfr_offset, reg_val);
-		break;
-	default:
-		break;
-	}
-
-	return reg_val;
 }

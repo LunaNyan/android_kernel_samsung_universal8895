@@ -16,7 +16,6 @@
 #include <linux/sched.h>
 #include <linux/device.h>
 #include <linux/fault-inject.h>
-#include <linux/blkdev.h>
 #include <linux/wakelock.h>
 
 #include <linux/mmc/core.h>
@@ -83,13 +82,6 @@ struct mmc_ios {
 };
 
 struct mmc_host_ops {
-	int (*init)(struct mmc_host *host);
-	/*
-	 * 'enable' is called when the host is claimed and 'disable' is called
-	 * when the host is released. 'enable' and 'disable' are deprecated.
-	 */
-	int (*enable)(struct mmc_host *host);
-	int (*disable)(struct mmc_host *host);
 	/*
 	 * It is optional for the host to implement pre_req and post_req in
 	 * order to support double buffering of requests (prepare one
@@ -395,12 +387,6 @@ struct mmc_host {
 		int				num_funcs;
 	} embedded_sdio_data;
 #endif
-
-#ifdef CONFIG_BLOCK
-	int			latency_hist_enabled;
-	struct io_latency_state io_lat_s;
-#endif
-	int			pm_progress;	/* pm_notify is in progress */
 
 	unsigned long		private[0] ____cacheline_aligned;
 };

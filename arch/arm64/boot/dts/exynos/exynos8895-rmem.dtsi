@@ -22,11 +22,6 @@
 			reg = <0x0 0x80002000 0x2000>;
 		};
 
-		tima_mem: tima_region@0xB1000000 {
-			compatible = "removed-dma-pool";
-			reg = <0x0 0xB1000000 0x200000>;
-		};
-
 		seclog_mem {
 			compatible = "exynos8895,seclog";
 			reg = <0x0 0xC0000000 0x10000>;
@@ -34,8 +29,7 @@
 
 		camera {
 			compatible = "exynos8890-ion,camera";
-			ion,recyclable;
-			reg = <0x0 0xC0400000 0xE400000>;
+			reg = <0x0 0xC0010000 0xE400000>;
 			id = <10>;
 		};
 
@@ -51,21 +45,17 @@
 			reg = <0x0 0xEA800000 0x400000>;
 		};
 
+		/* NOTE: reusable region should be aligned by 4MiB */
 		video_stream {
 			compatible = "exynos8890-ion,vstream";
 			ion,secure;
 			ion,reusable;
-			reg = <0x0 0xE3C00000 0x3800000>;
+			/* TUI : 2560x1440 32bpp 3frames = 2560*1440*(32/8)*3 */
+			/* DRM : 0x3800000				      */
+			/* 0x3C00000 = ALIGN(max(0x3840000, 0x3800000), 4MiB) */
+			reg = <0x0 0xE6C00000 0x3C00000>;
 			id = <3>;
 			compat-id = <25 31>;
-		};
-
-		tui {
-			/* ALIGN(ALIGN(1440*2990*4, 256KB) * 3, 4MB) */
-			compatible = "exynos8890-ion,tui";
-			ion,reusable;
-			reg = <0x0 0xE7400000 0x3400000>;
-			id = <12>;
 		};
 
 		crypto {

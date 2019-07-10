@@ -527,15 +527,9 @@ static int misc_release(struct inode *inode, struct file *filp)
 	struct io_device *iod = (struct io_device *)filp->private_data;
 	struct modem_shared *msd = iod->msd;
 	struct link_device *ld;
-	int i;
 
-	if (atomic_dec_and_test(&iod->opened)) {
+	if (atomic_dec_and_test(&iod->opened))
 		skb_queue_purge(&iod->sk_rx_q);
-
-		/* purge multi_frame queue */
-		for (i = 0; i < NUM_SIPC_MULTI_FRAME_IDS; i++)
-			skb_queue_purge(&iod->sk_multi_q[i]);
-	}
 
 	list_for_each_entry(ld, &msd->link_dev_list, list) {
 		if (IS_CONNECTED(iod, ld) && ld->terminate_comm)
@@ -723,10 +717,8 @@ static long misc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	case IOCTL_MODEM_FORCE_CRASH_EXIT:
 		if (mc->ops.modem_force_crash_exit) {
-			if (arg)
- 				ld->crash_type = arg;
-			mif_err("%s: IOCTL_MODEM_FORCE_CRASH_EXIT (%d)\n",
-				iod->name, ld->crash_type);
+			mif_err("%s: IOCTL_MODEM_FORCE_CRASH_EXIT\n",
+				iod->name);
 			return mc->ops.modem_force_crash_exit(mc);
 		}
 		mif_err("%s: !mc->ops.modem_force_crash_exit\n", iod->name);
@@ -1488,9 +1480,9 @@ int sipc5_init_io_device(struct io_device *iod)
 			free_netdev(iod->ndev);
 		}
 
-		mif_debug("iod 0x%pK\n", iod);
+		mif_debug("iod 0x%p\n", iod);
 		vnet = netdev_priv(iod->ndev);
-		mif_debug("vnet 0x%pK\n", vnet);
+		mif_debug("vnet 0x%p\n", vnet);
 		vnet->iod = iod;
 
 		break;
@@ -1500,6 +1492,7 @@ int sipc5_init_io_device(struct io_device *iod)
 
 		iod->miscdev.minor = MISC_DYNAMIC_MINOR;
 		iod->miscdev.name = iod->name;
+		iod->miscdev.fops = &misc_io_fops;
 
 		ret = misc_register(&iod->miscdev);
 		if (ret)
@@ -1538,8 +1531,6 @@ int sipc5_init_io_device(struct io_device *iod)
 void sipc5_deinit_io_device(struct io_device *iod)
 {
 	mif_err("%s: io_typ=%d\n", iod->name, iod->io_typ);
-	
-	wake_lock_destroy(&iod->wakelock);
 	
 	/* De-register misc or net device */
 	switch (iod->io_typ) {

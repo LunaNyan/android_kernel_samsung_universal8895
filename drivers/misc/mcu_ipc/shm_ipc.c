@@ -62,6 +62,21 @@ struct shm_plat_data {
 } pdata;
 
 #ifdef CONFIG_CP_RAM_LOGGING
+static int memshare_open(struct inode *inode, struct file *filep)
+{
+	shm_get_cplog_region();
+	return 0;
+}
+
+static int memshare_release(struct inode *inode, struct file *filep)
+{
+	if (pdata.v_cplog) {
+		vunmap(pdata.v_cplog);
+		pdata.v_cplog = NULL;
+	}
+	return 0;
+}
+
 static ssize_t memshare_read(struct file *filep, char __user *buf,
 		size_t count, loff_t *pos)
 {
@@ -71,16 +86,9 @@ static ssize_t memshare_read(struct file *filep, char __user *buf,
 	unsigned long addr = 0;
 	int copy_size = 0;
 	int ret = 0;
-	int try_cnt = 3;
-	size_t alloc_size = SZ_1M;
 
 	if ((filep->f_flags & O_NONBLOCK) && !rd_dev->data_ready)
 		return -EAGAIN;
-
-	if (*pos < 0 || *pos >= rd_dev->cplog_size) {
-		pr_err("%s: tried to read over limit (%lld)\n", __func__, *pos);
-		return 0;
-	}
 
 	data_left = rd_dev->cplog_size - *pos;
 	addr = rd_dev->p_cplog_addr + *pos;
@@ -93,21 +101,13 @@ static ssize_t memshare_read(struct file *filep, char __user *buf,
 		goto ramdump_done;
 	}
 
-	while (try_cnt--) {
-		copy_size = min(count, (size_t)alloc_size);
-		copy_size = min((unsigned long)copy_size, data_left);
-		device_mem = shm_request_region(pdata.p_cplog_addr + *pos,
-				copy_size);
-
-		if (device_mem)
-			break;
-
-		alloc_size /= 2;
-	}
+	copy_size = min(count, (size_t)SZ_1M);
+	copy_size = min((unsigned long)copy_size, data_left);
+	device_mem = shm_get_cplog_region() + *pos;
 
 	if (device_mem == NULL) {
-		pr_err("%s(%s): Unable to ioremap: addr %lx, size %d\n",
-				__func__, pdata.name, addr, copy_size);
+		pr_err("%s(%s): Unable to ioremap: addr %lx, size %d\n", __func__,
+				pdata.name, addr, copy_size);
 		ret = -ENOMEM;
 		goto ramdump_done;
 	}
@@ -116,7 +116,6 @@ static ssize_t memshare_read(struct file *filep, char __user *buf,
 		pr_err("%s(%s): Couldn't copy all data to user.", __func__,
 				rd_dev->name);
 		ret = -EFAULT;
-		vunmap(device_mem);
 		goto ramdump_done;
 	}
 
@@ -124,8 +123,6 @@ static ssize_t memshare_read(struct file *filep, char __user *buf,
 
 	pr_debug("%s(%s): Read %d bytes from address %lx.", __func__,
 			pdata.name, copy_size, addr);
-	
-	vunmap(device_mem);
 
 	return copy_size;
 
@@ -135,6 +132,8 @@ ramdump_done:
 }
 
 static const struct file_operations memshare_file_ops = {
+	.open = memshare_open,
+	.release = memshare_release,
 	.read = memshare_read
 };
 
@@ -326,9 +325,6 @@ void __iomem *shm_request_region(unsigned long sh_addr, unsigned size)
 	}
 
 	v_addr = vmap(pages, num_pages, VM_MAP, prot);
-	if (v_addr == NULL)
-		pr_err("%s: Failed to vmap pages\n", __func__);
-
 	kfree(pages);
 
 	return (void __iomem *)v_addr;

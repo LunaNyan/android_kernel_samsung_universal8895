@@ -40,8 +40,6 @@
 #include "blk.h"
 #include "blk-mq.h"
 
-#include <linux/math64.h>
-
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_rq_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_complete);
@@ -235,7 +233,7 @@ EXPORT_SYMBOL(blk_start_queue_async);
  **/
 void blk_start_queue(struct request_queue *q)
 {
-	WARN_ON(!in_interrupt() && !irqs_disabled());
+	WARN_ON(!irqs_disabled());
 
 	queue_flag_clear(QUEUE_FLAG_STOPPED, q);
 	__blk_run_queue(q);
@@ -517,9 +515,7 @@ EXPORT_SYMBOL_GPL(blk_queue_bypass_end);
 
 void blk_set_queue_dying(struct request_queue *q)
 {
-	spin_lock_irq(q->queue_lock);
-	queue_flag_set(QUEUE_FLAG_DYING, q);
-	spin_unlock_irq(q->queue_lock);
+	queue_flag_set_unlocked(QUEUE_FLAG_DYING, q);
 
 	if (q->mq_ops)
 		blk_mq_wake_waiters(q);
@@ -528,8 +524,8 @@ void blk_set_queue_dying(struct request_queue *q)
 
 		blk_queue_for_each_rl(rl, q) {
 			if (rl->rq_pool) {
-				wake_up_all(&rl->wait[BLK_RW_SYNC]);
-				wake_up_all(&rl->wait[BLK_RW_ASYNC]);
+				wake_up(&rl->wait[BLK_RW_SYNC]);
+				wake_up(&rl->wait[BLK_RW_ASYNC]);
 			}
 		}
 	}
@@ -2028,14 +2024,7 @@ end_io:
  */
 blk_qc_t generic_make_request(struct bio *bio)
 {
-	/*
-	 * bio_list_on_stack[0] contains bios submitted by the current
-	 * make_request_fn.
-	 * bio_list_on_stack[1] contains bios that were submitted before
-	 * the current make_request_fn, but that haven't been processed
-	 * yet.
-	 */
-	struct bio_list bio_list_on_stack[2];
+	struct bio_list bio_list_on_stack;
 	blk_qc_t ret = BLK_QC_T_NONE;
 
 	if (!generic_make_request_checks(bio))
@@ -2052,7 +2041,7 @@ blk_qc_t generic_make_request(struct bio *bio)
 	 * should be added at the tail
 	 */
 	if (current->bio_list) {
-		bio_list_add(&current->bio_list[0], bio);
+		bio_list_add(current->bio_list, bio);
 		goto out;
 	}
 
@@ -2071,39 +2060,24 @@ blk_qc_t generic_make_request(struct bio *bio)
 	 * bio_list, and call into ->make_request() again.
 	 */
 	BUG_ON(bio->bi_next);
-	bio_list_init(&bio_list_on_stack[0]);
-	current->bio_list = bio_list_on_stack;
+	bio_list_init(&bio_list_on_stack);
+	current->bio_list = &bio_list_on_stack;
 	do {
 		struct request_queue *q = bdev_get_queue(bio->bi_bdev);
 
 		if (likely(blk_queue_enter(q, __GFP_DIRECT_RECLAIM) == 0)) {
-			struct bio_list lower, same;
-
-			/* Create a fresh bio_list for all subordinate requests */
-			bio_list_on_stack[1] = bio_list_on_stack[0];
-			bio_list_init(&bio_list_on_stack[0]);
 
 			ret = q->make_request_fn(q, bio);
 
 			blk_queue_exit(q);
-			/* sort new bios into those for a lower level
-			 * and those for the same level
-			 */
-			bio_list_init(&lower);
-			bio_list_init(&same);
-			while ((bio = bio_list_pop(&bio_list_on_stack[0])) != NULL)
-				if (q == bdev_get_queue(bio->bi_bdev))
-					bio_list_add(&same, bio);
-				else
-					bio_list_add(&lower, bio);
-			/* now assemble so we handle the lowest level first */
-			bio_list_merge(&bio_list_on_stack[0], &lower);
-			bio_list_merge(&bio_list_on_stack[0], &same);
-			bio_list_merge(&bio_list_on_stack[0], &bio_list_on_stack[1]);
+
+			bio = bio_list_pop(current->bio_list);
 		} else {
+			struct bio *bio_next = bio_list_pop(current->bio_list);
+
 			bio_io_error(bio);
+			bio = bio_next;
 		}
-		bio = bio_list_pop(&bio_list_on_stack[0]);
 	} while (bio);
 	current->bio_list = NULL; /* deactivate */
 
@@ -3562,72 +3536,6 @@ void blk_post_runtime_resume(struct request_queue *q, int err)
 EXPORT_SYMBOL(blk_post_runtime_resume);
 #endif
 
-#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
-/*********************************
- * debugfs functions
- **********************************/
-#ifdef CONFIG_DEBUG_FS
-#include <linux/debugfs.h>
-
-#define DBGFS_FUNC_DECL(name) \
-static int sio_open_##name(struct inode *inode, struct file *file) \
-{ \
-	return single_open(file, sio_show_##name, inode->i_private); \
-} \
-static const struct file_operations sio_fops_##name = { \
-	.owner		= THIS_MODULE, \
-	.open		= sio_open_##name, \
-	.llseek		= seq_lseek, \
-	.read		= seq_read, \
-	.release	= single_release, \
-}
-
-static int sio_show_patches(struct seq_file *s, void *p)
-{
-	extern char *__start_sio_patches;
-	extern char *__stop_sio_patches;
-	char **p_version_str;
-
-	for (p_version_str = &__start_sio_patches; p_version_str < &__stop_sio_patches; ++p_version_str)
-		seq_printf(s, "%s\n", *p_version_str);
-
-	return 0;
-}
-
-static struct dentry *sio_debugfs_root;
-
-DBGFS_FUNC_DECL(patches);
-
-SIO_PATCH_VERSION(SIO_patch_manager, 1, 0, "");
-
-static int __init sio_debugfs_init(void)
-{
-	if (!debugfs_initialized())
-		return -ENODEV;
-
-	sio_debugfs_root = debugfs_create_dir("sio", NULL);
-	if (!sio_debugfs_root)
-		return -ENOMEM;
-
-	debugfs_create_file("patches", 0400, sio_debugfs_root, NULL, &sio_fops_patches);
-
-	return 0;
-}
-
-static void __exit sio_debugfs_exit(void)
-{
-	debugfs_remove_recursive(sio_debugfs_root);
-}
-#else
-static int __init sio_debugfs_init(void)
-{
-	return 0;
-}
-
-static void __exit sio_debugfs_exit(void) { }
-#endif
-#endif
-
 int __init blk_dev_init(void)
 {
 	BUILD_BUG_ON(__REQ_NR_BITS > 8 *
@@ -3645,91 +3553,5 @@ int __init blk_dev_init(void)
 	blk_requestq_cachep = kmem_cache_create("blkdev_queue",
 			sizeof(struct request_queue), 0, SLAB_PANIC, NULL);
 
-#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
-	sio_debugfs_init();
-#endif
-
 	return 0;
 }
-
-/*
- * Blk IO latency support. We want this to be as cheap as possible, so doing
- * this lockless (and avoiding atomics), a few off by a few errors in this
- * code is not harmful, and we don't want to do anything that is
- * perf-impactful.
- * TODO : If necessary, we can make the histograms per-cpu and aggregate
- * them when printing them out.
- */
-void
-blk_zero_latency_hist(struct io_latency_state *s)
-{
-	memset(s->latency_y_axis_read, 0,
-	       sizeof(s->latency_y_axis_read));
-	memset(s->latency_y_axis_write, 0,
-	       sizeof(s->latency_y_axis_write));
-	s->latency_reads_elems = 0;
-	s->latency_writes_elems = 0;
-}
-EXPORT_SYMBOL(blk_zero_latency_hist);
-
-ssize_t
-blk_latency_hist_show(struct io_latency_state *s, char *buf)
-{
-	int i;
-	int bytes_written = 0;
-	u_int64_t num_elem, elem;
-	int pct;
-
-	num_elem = s->latency_reads_elems;
-	if (num_elem > 0) {
-		bytes_written += scnprintf(buf + bytes_written,
-			   PAGE_SIZE - bytes_written,
-			   "IO svc_time Read Latency Histogram (n = %llu):\n",
-			   num_elem);
-		for (i = 0;
-		     i < ARRAY_SIZE(latency_x_axis_us);
-		     i++) {
-			elem = s->latency_y_axis_read[i];
-			pct = div64_u64(elem * 100, num_elem);
-			bytes_written += scnprintf(buf + bytes_written,
-						   PAGE_SIZE - bytes_written,
-						   "\t< %5lluus%15llu%15d%%\n",
-						   latency_x_axis_us[i],
-						   elem, pct);
-		}
-		/* Last element in y-axis table is overflow */
-		elem = s->latency_y_axis_read[i];
-		pct = div64_u64(elem * 100, num_elem);
-		bytes_written += scnprintf(buf + bytes_written,
-					   PAGE_SIZE - bytes_written,
-					   "\t> %5dms%15llu%15d%%\n", 10,
-					   elem, pct);
-	}
-	num_elem = s->latency_writes_elems;
-	if (num_elem > 0) {
-		bytes_written += scnprintf(buf + bytes_written,
-			   PAGE_SIZE - bytes_written,
-			   "IO svc_time Write Latency Histogram (n = %llu):\n",
-			   num_elem);
-		for (i = 0;
-		     i < ARRAY_SIZE(latency_x_axis_us);
-		     i++) {
-			elem = s->latency_y_axis_write[i];
-			pct = div64_u64(elem * 100, num_elem);
-			bytes_written += scnprintf(buf + bytes_written,
-						   PAGE_SIZE - bytes_written,
-						   "\t< %5lluus%15llu%15d%%\n",
-						   latency_x_axis_us[i],
-						   elem, pct);
-		}
-		/* Last element in y-axis table is overflow */
-		elem = s->latency_y_axis_write[i];
-		pct = div64_u64(elem * 100, num_elem);
-		bytes_written += scnprintf(buf + bytes_written,
-					   PAGE_SIZE - bytes_written,
-					   "\t> %5dms%15llu%15d%%\n", 10,
-					   elem, pct);
-	}
-	return bytes_written;
-}
-EXPORT_SYMBOL(blk_latency_hist_show);

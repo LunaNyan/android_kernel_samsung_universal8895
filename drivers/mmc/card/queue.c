@@ -55,10 +55,9 @@ static int mmc_queue_thread(void *d)
 	struct request_queue *q = mq->queue;
 	struct sched_param scheduler_params = {0};
 
-	if (mq->card->type != MMC_TYPE_SD) {
-		scheduler_params.sched_priority = 1;
-		sched_setscheduler(current, SCHED_FIFO, &scheduler_params);
-	}
+	scheduler_params.sched_priority = 1;
+
+	sched_setscheduler(current, SCHED_FIFO, &scheduler_params);
 
 	current->flags |= PF_MEMALLOC;
 
@@ -70,8 +69,7 @@ static int mmc_queue_thread(void *d)
 		spin_lock_irq(q->queue_lock);
 		set_current_state(TASK_INTERRUPTIBLE);
 		if (mq->mqrq_prev->req &&
-				(mq->card && (mq->card->type == MMC_TYPE_SD) &&
-				mq->card->host->pm_progress))
+				(mq->card && (mq->card->type == MMC_TYPE_SD)))
 			req = NULL;
 		else
 			req = blk_fetch_request(q);
@@ -305,27 +303,14 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 	mq->thread = kthread_run(mmc_queue_thread, mq, "mmcqd/%d%s",
 		host->index, subname ? subname : "");
 
-	if (mmc_card_sd(card)) {
-		/* decrease max # of requests to 32. The goal of this tunning is
-		 * reducing the time for draining elevator when elevator_switch
-		 * function is called. It is effective for slow external sdcard.
-		 */
-		mq->queue->nr_requests = BLKDEV_MAX_RQ / 8;
-		if (mq->queue->nr_requests < 32)
-			mq->queue->nr_requests = 32;
 #ifdef CONFIG_LARGE_DIRTY_BUFFER
+	if (mmc_card_sd(card)) {
 		/* apply more throttle on external sdcard */
+		mq->queue->backing_dev_info.max_ratio = 10;
+		mq->queue->backing_dev_info.min_ratio = 10;
 		mq->queue->backing_dev_info.capabilities |= BDI_CAP_STRICTLIMIT;
-		bdi_set_min_ratio(&mq->queue->backing_dev_info, 20);
-		bdi_set_max_ratio(&mq->queue->backing_dev_info, 20);
-#endif
-		pr_info("Parameters for external-sdcard: min/max_ratio: %u/%u "
-				"strictlimit: on nr_requests: %lu read_ahead_kb: %lu\n",
-				mq->queue->backing_dev_info.min_ratio,
-				mq->queue->backing_dev_info.max_ratio,
-				mq->queue->nr_requests,
-				mq->queue->backing_dev_info.ra_pages * 4);
 	}
+#endif
 
 	if (IS_ERR(mq->thread)) {
 		ret = PTR_ERR(mq->thread);

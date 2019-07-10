@@ -21,12 +21,6 @@
 #include <linux/log2.h>
 #include <linux/pm_runtime.h>
 
-#ifdef CONFIG_BLOCK_SUPPORT_STLOG
-#include <linux/fslog.h>
-#else
-#define ST_LOG(fmt, ...)
-#endif
-
 #include "blk.h"
 
 static DEFINE_MUTEX(block_class_lock);
@@ -519,11 +513,6 @@ static void register_disk(struct gendisk *disk)
 	struct hd_struct *part;
 	int err;
 
-#ifdef CONFIG_BLOCK_SUPPORT_STLOG
-	int major = disk->major;
-	int first_minor = disk->first_minor;
-#endif
-
 	ddev->parent = disk->driverfs_dev;
 
 	dev_set_name(ddev, "%s", disk->disk_name);
@@ -574,15 +563,11 @@ exit:
 	/* announce disk after possible partitions are created */
 	dev_set_uevent_suppress(ddev, 0);
 	kobject_uevent(&ddev->kobj, KOBJ_ADD);
-	ST_LOG("<%s> KOBJ_ADD %d:%d", __func__, major, first_minor);
 
 	/* announce possible partitions */
 	disk_part_iter_init(&piter, disk, 0);
-	while ((part = disk_part_iter_next(&piter))) {
+	while ((part = disk_part_iter_next(&piter)))
 		kobject_uevent(&part_to_dev(part)->kobj, KOBJ_ADD);
-		ST_LOG("<%s> KOBJ_ADD %d:%d", __func__, major,
-					first_minor + part->partno);
-	}
 	disk_part_iter_exit(&piter);
 }
 
@@ -627,7 +612,7 @@ void add_disk(struct gendisk *disk)
 
 	/* Register BDI before referencing it from bdev */
 	bdi = &disk->queue->backing_dev_info;
-	bdi_register_owner(bdi, disk_to_dev(disk));
+	bdi_register_dev(bdi, disk_devt(disk));
 
 	blk_register_region(disk_devt(disk), disk->minors, NULL,
 			    exact_match, exact_lock, disk);
@@ -654,10 +639,6 @@ void del_gendisk(struct gendisk *disk)
 	struct disk_part_iter piter;
 	struct hd_struct *part;
 
-#ifdef CONFIG_BLOCK_SUPPORT_STLOG
-	struct device *dev;
-#endif
-
 	blk_integrity_del(disk);
 	disk_del_events(disk);
 
@@ -683,14 +664,10 @@ void del_gendisk(struct gendisk *disk)
 
 	kobject_put(disk->part0.holder_dir);
 	kobject_put(disk->slave_dir);
+	disk->driverfs_dev = NULL;
 	if (!sysfs_deprecated)
 		sysfs_remove_link(block_depr, dev_name(disk_to_dev(disk)));
 	pm_runtime_set_memalloc_noio(disk_to_dev(disk), false);
-#ifdef CONFIG_BLOCK_SUPPORT_STLOG
-	dev = disk_to_dev(disk);
-	ST_LOG("<%s> KOBJ_REMOVE %d:%d %s", __func__,
-		MAJOR(dev->devt), MINOR(dev->devt), dev->kobj.name);
-#endif
 	device_del(disk_to_dev(disk));
 }
 EXPORT_SYMBOL(del_gendisk);
@@ -912,67 +889,8 @@ static const struct file_operations proc_partitions_operations = {
 	.llseek		= seq_lseek,
 	.release	= seq_release,
 };
-
-static void *show_iodevs_start(struct seq_file *seqf, loff_t *pos)
-{
-	void *p;
-
-	p = disk_seqf_start(seqf, pos);
-	if (!IS_ERR_OR_NULL(p) && !*pos)
-		seq_printf(seqf, "%12s\t%12s\n", "name", "#blocks");
-	return p;
-}
-
-static int show_iodevs(struct seq_file *seqf, void *v)
-{
-	struct gendisk *sgp = v;
-	struct disk_part_iter piter;
-	struct hd_struct *part;
-	char buf[BDEVNAME_SIZE];
-
-	/* Don't show non-partitionable removeable devices or empty devices */
-	if (!get_capacity(sgp) || (!disk_max_parts(sgp) &&
-				(sgp->flags & GENHD_FL_REMOVABLE)))
-		return 0;
-	if (sgp->flags & GENHD_FL_SUPPRESS_PARTITION_INFO)
-		return 0;
-
-	/* show the full disk and all 500MB size or more partitions of it */
-	disk_part_iter_init(&piter, sgp, DISK_PITER_INCL_PART0);
-#define MB(x) ((x) * 1024)
-	while ((part = disk_part_iter_next(&piter))) {
-		unsigned long long size = part_nr_sects_read(part) >> 1;
-
-		if (size < MB(500))
-			continue;
-
-		seq_printf(seqf, "%12s\t%12llu\n",
-				disk_name(sgp, part->partno, buf), size);
-	}
-	disk_part_iter_exit(&piter);
-
-	return 0;
-}
-
-static const struct seq_operations iodevs_op = {
-	.start	= show_iodevs_start,
-	.next	= disk_seqf_next,
-	.stop	= disk_seqf_stop,
-	.show	= show_iodevs
-};
-
-static int iodevs_open(struct inode *inode, struct file *file)
-{
-	return seq_open(file, &iodevs_op);
-}
-
-static const struct file_operations proc_iodevs_operations = {
-	.open		= iodevs_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= seq_release,
-};
 #endif
+
 
 static struct kobject *base_probe(dev_t devt, int *partno, void *data)
 {
@@ -1490,7 +1408,6 @@ static int __init proc_genhd_init(void)
 {
 	proc_create("iostats", 0, NULL, &proc_iostats_operations);
 	proc_create("diskstats", 0, NULL, &proc_diskstats_operations);
-	proc_create("iodevs", 0, NULL, &proc_iodevs_operations);
 	proc_create("partitions", 0, NULL, &proc_partitions_operations);
 	return 0;
 }

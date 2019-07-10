@@ -205,7 +205,6 @@ int sensor_5e3_cis_init(struct v4l2_subdev *subdev)
 #if USE_OTP_AWB_CAL_DATA
 	/* Read AWB Cal Data from OTPROM */
 	printk(KERN_INFO "%s 5E3 AWB Cal data read! \n", __func__);
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write8(client, 0xA00, 0x04);
 	if (unlikely(ret)) {
 		err("failed to fimc_is_i2c_write (%d)\n", ret);
@@ -308,9 +307,6 @@ int sensor_5e3_cis_init(struct v4l2_subdev *subdev)
 #endif
 
 p_err:
-#if USE_OTP_AWB_CAL_DATA
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
-#endif
 	return ret;
 }
 
@@ -338,7 +334,6 @@ int sensor_5e3_cis_log_status(struct v4l2_subdev *subdev)
 		goto p_err;
 	}
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	pr_err("[SEN:DUMP] *******************************\n");
 	ret = fimc_is_sensor_read16(client, 0x0000, &data16);
 	if (unlikely(!ret)) printk("[SEN:DUMP] model_id(%x)\n", data16);
@@ -348,7 +343,6 @@ int sensor_5e3_cis_log_status(struct v4l2_subdev *subdev)
 	if (unlikely(!ret)) printk("[SEN:DUMP] frame_count(%x)\n", data8);
 	ret = fimc_is_sensor_read8(client, 0x0100, &data8);
 	if (unlikely(!ret)) pr_err("[SEN:DUMP] mode_select(%x)\n", data8);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 
 	sensor_cis_dump_registers(subdev, sensor_5e3_setfiles[0], sensor_5e3_setfile_sizes[0]);
 
@@ -384,9 +378,7 @@ static int sensor_5e3_cis_group_param_hold_func(struct v4l2_subdev *subdev, unsi
 		goto p_err;
 	}
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write8(client, 0x0104, hold);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (ret < 0)
 		goto p_err;
 
@@ -560,7 +552,6 @@ int sensor_5e3_cis_set_size(struct v4l2_subdev *subdev, cis_shared_data *cis_dat
 	}
 
 	/* 1. page_select */
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write16(client, 0x6028, 0x2000);
 	if (ret < 0)
 		 goto p_err;
@@ -653,7 +644,6 @@ int sensor_5e3_cis_set_size(struct v4l2_subdev *subdev, cis_shared_data *cis_dat
 #endif
 
 p_err:
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	return ret;
 }
 
@@ -687,7 +677,6 @@ int sensor_5e3_cis_stream_on(struct v4l2_subdev *subdev)
 
 	dbg_sensor("[MOD:D:%d] %s\n", cis->id, __func__);
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = sensor_5e3_cis_group_param_hold_func(subdev, 0x00);
 	if (ret < 0)
 		err("[%s] sensor_5e3_cis_group_param_hold_func fail\n", __func__);
@@ -717,7 +706,6 @@ int sensor_5e3_cis_stream_on(struct v4l2_subdev *subdev)
 #endif
 
 p_err:
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	return ret;
 }
 
@@ -756,7 +744,6 @@ int sensor_5e3_cis_stream_off(struct v4l2_subdev *subdev)
 		err("[%s] sensor_5e3_cis_group_param_hold_func fail\n", __func__);
 
 	/* Sensor stream off */
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write16(client, 0x6028, 0x4000);
 	if (unlikely(ret))
 		err("i2c treansfer fail addr(%x), val(%x), ret(%d)\n", 0x6028, 0x4000, ret);
@@ -772,7 +759,6 @@ int sensor_5e3_cis_stream_off(struct v4l2_subdev *subdev)
 #endif
 
 p_err:
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	return ret;
 }
 
@@ -866,7 +852,6 @@ int sensor_5e3_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param
 	}
 
 	/* Short exposure */
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write16(client, 0x0202, short_coarse_int);
 	if (ret < 0)
 		goto p_err;
@@ -884,7 +869,6 @@ int sensor_5e3_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_param
 #endif
 
 p_err:
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (hold > 0) {
 		hold = sensor_5e3_cis_group_param_hold_func(subdev, 0x00);
 		if (hold < 0)
@@ -1107,9 +1091,7 @@ int sensor_5e3_cis_set_frame_duration(struct v4l2_subdev *subdev, u32 frame_dura
 		goto p_err;
 	}
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write16(client, 0x0340, frame_length_lines);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (ret < 0)
 		goto p_err;
 
@@ -1287,9 +1269,7 @@ int sensor_5e3_cis_set_analog_gain(struct v4l2_subdev *subdev, struct ae_param *
 		goto p_err;
 	}
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write16(client, 0x0204, analog_gain);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (ret < 0)
 		goto p_err;
 
@@ -1342,9 +1322,7 @@ int sensor_5e3_cis_get_analog_gain(struct v4l2_subdev *subdev, u32 *again)
 		goto p_err;
 	}
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_read16(client, 0x0204, &analog_gain);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (ret < 0)
 		goto p_err;
 
@@ -1399,9 +1377,7 @@ int sensor_5e3_cis_get_min_analog_gain(struct v4l2_subdev *subdev, u32 *min_agai
 
 	cis_data = cis->cis_data;
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_read16(client, 0x0084, &read_value);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (unlikely(ret))
 		err("i2c treansfer fail addr(%x), val(%x), ret(%d)\n", 0x0084, read_value, ret);
 
@@ -1453,9 +1429,7 @@ int sensor_5e3_cis_get_max_analog_gain(struct v4l2_subdev *subdev, u32 *max_agai
 
 	cis_data = cis->cis_data;
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_read16(client, 0x0086, &read_value);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (unlikely(ret))
 		err("i2c treansfer fail addr(%x), val(%x), ret(%d)\n", 0x0086, read_value, ret);
 
@@ -1545,7 +1519,6 @@ int sensor_5e3_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_param 
 
 	dgains[0] = dgains[1] = dgains[2] = dgains[3] = short_gain;
 	/* Short digital gain */
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write16_array(client, 0x020E, dgains, 4);
 	if (ret < 0)
 		goto p_err;
@@ -1563,7 +1536,6 @@ int sensor_5e3_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_param 
 #endif
 
 p_err:
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (hold > 0) {
 		hold = sensor_5e3_cis_group_param_hold_func(subdev, 0x00);
 		if (hold < 0)
@@ -1608,9 +1580,7 @@ int sensor_5e3_cis_get_digital_gain(struct v4l2_subdev *subdev, u32 *dgain)
 		goto p_err;
 	}
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_read16(client, 0x020E, &digital_gain);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (ret < 0)
 		goto p_err;
 
@@ -1665,9 +1635,7 @@ int sensor_5e3_cis_get_min_digital_gain(struct v4l2_subdev *subdev, u32 *min_dga
 
 	cis_data = cis->cis_data;
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_read16(client, 0x1084, &read_value);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (unlikely(ret))
 		err("i2c treansfer fail addr(%x), val(%x), ret(%d)\n", 0x1084, read_value, ret);
 
@@ -1719,9 +1687,7 @@ int sensor_5e3_cis_get_max_digital_gain(struct v4l2_subdev *subdev, u32 *max_dga
 
 	cis_data = cis->cis_data;
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_read16(client, 0x1086, &read_value);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (unlikely(ret))
 		err("i2c treansfer fail addr(%x), val(%x), ret(%d)\n", 0x1086, read_value, ret);
 

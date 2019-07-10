@@ -55,8 +55,8 @@ int fpsensor_goto_suspend = 0;
 static int gpio_irq;
 static struct etspi_data *g_data;
 static DECLARE_WAIT_QUEUE_HEAD(interrupt_waitq);
-static unsigned int bufsiz = 1024;
-module_param(bufsiz, uint, 0444);
+static unsigned bufsiz = 1024;
+module_param(bufsiz, uint, S_IRUGO);
 MODULE_PARM_DESC(bufsiz, "data bytes in biggest supported SPI message");
 
 static irqreturn_t etspi_fingerprint_interrupt(int irq, void *dev_id)
@@ -67,7 +67,6 @@ static irqreturn_t etspi_fingerprint_interrupt(int irq, void *dev_id)
 	etspi->finger_on = 1;
 	disable_irq_nosync(gpio_irq);
 	wake_up_interruptible(&interrupt_waitq);
-	wake_lock_timeout(&etspi->fp_signal_lock, 1 * HZ);
 	pr_info("%s FPS triggered.int_count(%d) On(%d)\n", __func__,
 		etspi->int_count, etspi->finger_on);
 	return IRQ_HANDLED;
@@ -419,9 +418,11 @@ static long etspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 	/* copy into scratch area */
 	ioc = kmalloc(tmp, GFP_KERNEL);
-	if (ioc == NULL)
-		return -ENOMEM;
-
+	if (ioc == NULL) {
+		pr_err("%s kmalloc error\n", __func__);
+		retval = -ENOMEM;
+		goto out;
+	}
 	if (__copy_from_user(ioc, (void __user *)arg, tmp)) {
 		pr_err("%s __copy_from_user error\n", __func__);
 		retval = -EFAULT;
@@ -724,15 +725,11 @@ static long etspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case FP_SET_SENSOR_TYPE:
-		if ((int)ioc->len >= SENSOR_OOO && (int)ioc->len < SENSOR_MAXIMUM) {
-			if ((int)ioc->len == SENSOR_OOO && etspi->sensortype == SENSOR_FAILED) {
-				pr_info("%s Maintain type check from out of order :%s\n", __func__,
-					sensor_status[g_data->sensortype + 2]);
-			} else {
-				etspi->sensortype = (int)ioc->len;
-				pr_info("%s FP_SET_SENSOR_TYPE :%s\n", __func__,
-					sensor_status[g_data->sensortype + 2]);
-			}
+		if ((int)ioc->len >= SENSOR_UNKNOWN
+				&& (int)ioc->len < (SENSOR_STATUS_SIZE - 1)) {
+			etspi->sensortype = (int)ioc->len;
+			pr_info("%s FP_SET_SENSOR_TYPE :%s\n", __func__,
+				sensor_status[g_data->sensortype + 1]);
 		} else {
 			pr_err("%s FP_SET_SENSOR_TYPE invalid value %d\n",
 					__func__, (int)ioc->len);
@@ -900,8 +897,6 @@ int etspi_platformInit(struct etspi_data *etspi)
 #ifdef ENABLE_SENSORS_FPRINT_SECURE
 	wake_lock_init(&etspi->fp_spi_lock, WAKE_LOCK_SUSPEND, "etspi_wake_lock");
 #endif
-	wake_lock_init(&etspi->fp_signal_lock,
-				WAKE_LOCK_SUSPEND, "etspi_sigwake_lock");
 
 	pr_info("%s successful status=%d\n", __func__, status);
 	return status;
@@ -938,7 +933,6 @@ void etspi_platformUninit(struct etspi_data *etspi)
 #ifdef ENABLE_SENSORS_FPRINT_SECURE
 		wake_lock_destroy(&etspi->fp_spi_lock);
 #endif
-		wake_lock_destroy(&etspi->fp_signal_lock);
 	}
 }
 
@@ -1058,23 +1052,14 @@ static int etspi_type_check(struct etspi_data *etspi)
 	 * type check return value
 	 * ET510C : 0X00 / 0X66 / 0X00 / 0X33
 	 * ET510D : 0x03 / 0x0A / 0x05
-	 * ET516B : 0x01 or 0x02 / 0x10 / 0x05
-	 * ET520  : 0x03 / 0x14 / 0x05
-	 * ET523  : 0x00 / 0x17 / 0x05
+	 * ET516A : 0x00 / 0x10 / 0x05
 	 */
-	if (((buf1 == 0x01) || (buf1 == 0x02))
-		&& (buf2 == 0x10) && (buf3 == 0x05)) {
+	if ((buf1 == 0x00) && (buf2 == 0x10) && (buf3 == 0x05)) {
 		etspi->sensortype = SENSOR_EGIS;
-		pr_info("%s sensor type is EGIS ET516B sensor\n", __func__);
+		pr_info("%s sensor type is EGIS ET516A sensor\n", __func__);
 	} else  if ((buf1 == 0x03) && (buf2 == 0x0A) && (buf3 == 0x05)) {
 		etspi->sensortype = SENSOR_EGIS;
 		pr_info("%s sensor type is EGIS ET510D sensor\n", __func__);
-	} else  if ((buf1 == 0x03) && (buf2 == 0x14) && (buf3 == 0x05)) {
-		etspi->sensortype = SENSOR_EGIS;
-		pr_info("%s sensor type is EGIS ET520 sensor\n", __func__);
-	} else if((buf1 == 0x00) && (buf2 == 0x17) && (buf3 == 0x05)) {
-		etspi->sensortype = SENSOR_EGIS;
-		pr_info("%s sensor type is EGIS ET523 sensor\n", __func__);
 	} else {
 		if ((buf4 == 0x00) && (buf5 == 0x66)
 				&& (buf6 == 0x00) && (buf7 == 0x33)) {
@@ -1116,10 +1101,14 @@ static ssize_t etspi_adm_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%d\n", g_data->detect_mode);
 }
 
-static DEVICE_ATTR(type_check, 0444, etspi_type_check_show, NULL);
-static DEVICE_ATTR(vendor, 0444,	etspi_vendor_show, NULL);
-static DEVICE_ATTR(name, 0444, etspi_name_show, NULL);
-static DEVICE_ATTR(adm, 0444, etspi_adm_show, NULL);
+static DEVICE_ATTR(type_check, S_IRUGO,
+	etspi_type_check_show, NULL);
+static DEVICE_ATTR(vendor, S_IRUGO,
+	etspi_vendor_show, NULL);
+static DEVICE_ATTR(name, S_IRUGO,
+	etspi_name_show, NULL);
+static DEVICE_ATTR(adm, S_IRUGO,
+	etspi_adm_show, NULL);
 
 static struct device_attribute *fp_attrs[] = {
 	&dev_attr_type_check,
@@ -1140,7 +1129,7 @@ static void etspi_work_func_debug(struct work_struct *work)
 		__func__,
 		ldo_value, gpio_get_value(g_data->sleepPin),
 		g_data->tz_mode,
-		sensor_status[g_data->sensortype + 2]);
+		sensor_status[g_data->sensortype + 1]);
 }
 
 static void etspi_enable_debug_timer(void)
@@ -1227,8 +1216,10 @@ static int etspi_probe(struct spi_device *spi)
 
 	/* Allocate driver data */
 	etspi = kzalloc(sizeof(*etspi), GFP_KERNEL);
-	if (etspi == NULL)
+	if (etspi == NULL) {
+		pr_err("%s - Failed to kzalloc\n", __func__);
 		return -ENOMEM;
+	}
 
 	/* device tree call */
 	if (spi->dev.of_node) {
@@ -1436,7 +1427,7 @@ static const struct dev_pm_ops etspi_pm_ops = {
 	.resume = etspi_pm_resume
 };
 
-static const struct of_device_id etspi_match_table[] = {
+const static struct of_device_id etspi_match_table[] = {
 	{ .compatible = "etspi,et5xx",},
 	{},
 };

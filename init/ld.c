@@ -27,9 +27,9 @@
 #include <linux/init.h>
 #include <linux/proc_fs.h>
 #include <linux/vmalloc.h>
-#ifdef CONFIG_RKP
-#include <linux/rkp.h>
-#endif //CONFIG_RKP
+#ifdef CONFIG_TIMA_RKP
+#include <linux/vmm.h>
+#endif //CONFIG_TIMA_RKP
 
 #include "ld.h"
 #include "elf.h"
@@ -41,8 +41,8 @@
 #define ld_log(a, ...)
 #endif //LD_DEBUG
 
-int __init ld_Elf_Ehdr_to_Elf_Shdr(_Elf_Ehdr *ehdr, _Elf_Shdr **shdr, size_t *size)
-{
+int ld_Elf_Ehdr_to_Elf_Shdr(_Elf_Ehdr *ehdr, _Elf_Shdr **shdr, size_t *size) {
+
 	ld_log("%s\n", __FUNCTION__);
 
 	if(ehdr == NULL) { return -1; }
@@ -56,8 +56,8 @@ int __init ld_Elf_Ehdr_to_Elf_Shdr(_Elf_Ehdr *ehdr, _Elf_Shdr **shdr, size_t *si
 	return 0;
 }
 
-int __init ld_Elf_Ehdr_to_Elf_Phdr(_Elf_Ehdr *ehdr, _Elf_Phdr **phdr, size_t *size)
-{
+int ld_Elf_Ehdr_to_Elf_Phdr(_Elf_Ehdr *ehdr, _Elf_Phdr **phdr, size_t *size) {
+
 	ld_log("%s\n", __FUNCTION__);
 
 	if(ehdr == NULL) { return -1; }
@@ -71,8 +71,8 @@ int __init ld_Elf_Ehdr_to_Elf_Phdr(_Elf_Ehdr *ehdr, _Elf_Phdr **phdr, size_t *si
 	return 0;
 }
 
-int __init ld_binary_to_Elf_Ehdr(void *binary, _Elf_Ehdr **ehdr)
-{
+int ld_binary_to_Elf_Ehdr(void *binary, _Elf_Ehdr **ehdr) {
+
 	ld_log("%s\n", __FUNCTION__);
 
 	if(ehdr == NULL) { return -1; }
@@ -81,9 +81,8 @@ int __init ld_binary_to_Elf_Ehdr(void *binary, _Elf_Ehdr **ehdr)
 
 	return 0;
 }
+int ld_get_name(void *binary, char **name) {
 
-int __init ld_get_name(void *binary, char **name)
-{
 	_Elf_Dyn *dyn;
 	char *strtab;
 	size_t sz;
@@ -112,8 +111,8 @@ int __init ld_get_name(void *binary, char **name)
 	return 0;
 }
 
-int __init ld_get_version(void *binary, char **version)
-{
+int ld_get_version(void *binary, char **version) {
+
 	_Elf_Sym *symtab;
 	char *strtab;
 	size_t strtabsz;
@@ -146,8 +145,8 @@ int __init ld_get_version(void *binary, char **version)
 	return -1;
 }
 
-int __init ld_get_string(char *strtab, int index, char **string)
-{
+int ld_get_string(char *strtab, int index, char **string) {
+
 	ld_log("%s\n", __FUNCTION__);
 
 	if(strtab == NULL) { return -1; }
@@ -158,8 +157,8 @@ int __init ld_get_string(char *strtab, int index, char **string)
 	return 0;
 }
 
-int __init ld_get_symbol(_Elf_Sym *symtab, int index, _Elf_Sym **symbol)
-{
+int ld_get_symbol(_Elf_Sym *symtab, int index, _Elf_Sym **symbol) {
+
 	ld_log("%s\n", __FUNCTION__);
 
 	if(symtab == NULL) { return -1; }
@@ -170,8 +169,8 @@ int __init ld_get_symbol(_Elf_Sym *symtab, int index, _Elf_Sym **symbol)
 	return 0;
 }
 
-int __init ld_get_base(void *binary, void **address)
-{
+int ld_get_base(void *binary, void **address) {
+
 	_Elf_Ehdr *ehdr;
 	_Elf_Phdr *phdr;
 	int set;
@@ -203,8 +202,8 @@ int __init ld_get_base(void *binary, void **address)
 	return 0;
 }
 
-int __init ld_get_size(void *binary, size_t *size)
-{
+int ld_get_size(void *binary, size_t *size) {
+
 	_Elf_Ehdr *ehdr;
 	_Elf_Phdr *phdr;
 	int set;
@@ -229,15 +228,12 @@ int __init ld_get_size(void *binary, size_t *size)
 			}
 		}
 	}
-
-#ifdef CONFIG_RKP
-   	*size = *size - RKP_VMM_START;
-#endif
+   	*size = *size - VMM_RUNTIME_BASE;
 	return 0;
 }
 
-int __init ld_get_sect(void *binary, char *name, void **section, size_t *size)
-{
+int ld_get_sect(void *binary, char *name, void **section, size_t *size) {
+
 	_Elf_Ehdr *ehdr;
 	_Elf_Shdr *shdr;
 	size_t sz;
@@ -262,7 +258,7 @@ int __init ld_get_sect(void *binary, char *name, void **section, size_t *size)
 		if(ld_get_string(strtab, shdr[i].sh_name, &tmp)) { return -1; }
 
 		if(strcmp(name, tmp) == 0) {
-			*section = (void *)((unsigned long)binary + (unsigned long)shdr[i].sh_offset);
+			*section = (void *)((unsigned long)binary + (unsigned long)shdr[i].sh_offset - (unsigned long)VMM_RUNTIME_BASE);
 			*size = shdr[i].sh_size;
 			return 0;
 		}
@@ -273,8 +269,8 @@ int __init ld_get_sect(void *binary, char *name, void **section, size_t *size)
 	return -1;
 }
 
-int __init ld_get_dynamic_symtab(void *binary, _Elf_Sym **symtab, size_t *size)
-{
+int ld_get_dynamic_symtab(void *binary, _Elf_Sym **symtab, size_t *size) {
+
 	_Elf_Dyn *dyn;
 	size_t sz;
 	size_t ent;
@@ -317,8 +313,8 @@ int __init ld_get_dynamic_symtab(void *binary, _Elf_Sym **symtab, size_t *size)
 	return 0;
 }
 
-int __init ld_get_dynamic_strtab(void *binary, char **strtab, size_t *size)
-{
+int ld_get_dynamic_strtab(void *binary, char **strtab, size_t *size) {
+
 	_Elf_Dyn *dyn;
 	size_t sz;
 	unsigned int i;
@@ -357,8 +353,8 @@ int __init ld_get_dynamic_strtab(void *binary, char **strtab, size_t *size)
 }
 
 #ifdef __TARGET_64__
-int __init ld_get_dynamic_relatab(void *binary, _Elf_Rela **relatab, size_t *size)
-{
+int ld_get_dynamic_relatab(void *binary, _Elf_Rela **relatab, size_t *size) {
+
 	_Elf_Dyn *dyn;
 	size_t sz;
 	size_t ent;
@@ -401,8 +397,8 @@ int __init ld_get_dynamic_relatab(void *binary, _Elf_Rela **relatab, size_t *siz
 }
 
 #else //__TARGET_32__
-int __init ld_get_dynamic_reltab(void *binary, _Elf_Rel **reltab, size_t *size)
-{
+int ld_get_dynamic_reltab(void *binary, _Elf_Rel **reltab, size_t *size) {
+
 	_Elf_Dyn *dyn;
 	size_t sz;
 	size_t ent;
@@ -444,11 +440,11 @@ int __init ld_get_dynamic_reltab(void *binary, _Elf_Rel **reltab, size_t *size)
 #endif //__TARGET_64__ | __TARGET_32__
 
 #ifdef __TARGET_64__
-int __init ld_get_dynamic_plttab(void *binary, _Elf_Rela **plttab, size_t *size)
+int ld_get_dynamic_plttab(void *binary, _Elf_Rela **plttab, size_t *size) {
 #else //__TARGET_32__
-int __init ld_get_dynamic_plttab(void *binary, _Elf_Rel **plttab, size_t *size)
+int ld_get_dynamic_plttab(void *binary, _Elf_Rel **plttab, size_t *size) {
 #endif //__TARGET_64__ | __TARGET_32__
-{
+
 	_Elf_Dyn *dyn;
 	size_t sz;
 	int type;
@@ -493,8 +489,8 @@ int __init ld_get_dynamic_plttab(void *binary, _Elf_Rel **plttab, size_t *size)
 }
 
 #ifdef __TARGET_64__
-int __init ld_fixup_dynamic_relatab(void *binary, ld_resolve_t resolve, ld_translate_t translate)
-{
+int ld_fixup_dynamic_relatab(void *binary, ld_resolve_t resolve, ld_translate_t translate) {
+
 	_Elf_Rela *relatab;
 	_Elf_Sym *symtab;
 	size_t relatabsz;
@@ -551,8 +547,8 @@ int __init ld_fixup_dynamic_relatab(void *binary, ld_resolve_t resolve, ld_trans
 }
 
 #else //__TARGET_32__
-int __init ld_fixup_dynamic_reltab(void *binary, ld_resolve_t resolve, ld_translate_t translate)
-{
+int ld_fixup_dynamic_reltab(void *binary, ld_resolve_t resolve, ld_translate_t translate) {
+
 	_Elf_Rel *reltab;
 	_Elf_Sym *symtab;
 	size_t reltabsz;
@@ -624,8 +620,8 @@ int __init ld_fixup_dynamic_reltab(void *binary, ld_resolve_t resolve, ld_transl
 
 #endif //__TARGET_64__ | __TARGET_32__
 
-int __init ld_fixup_dynamic_plttab(void *binary, ld_resolve_t resolve, ld_translate_t translate)
-{
+int ld_fixup_dynamic_plttab(void *binary, ld_resolve_t resolve, ld_translate_t translate) {
+
 #ifdef __TARGET_64__
 	_Elf_Rela *plttab;
 #else //__TARGET_64__

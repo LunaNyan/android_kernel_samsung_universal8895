@@ -61,6 +61,7 @@
 #include "fimc-is-clk-gate.h"
 #include "fimc-is-dvfs.h"
 #include "fimc-is-device-preprocessor.h"
+#include "fimc-is-interface-fd.h"
 #include "fimc-is-vender-specific.h"
 #include "exynos-fimc-is-module.h"
 
@@ -1139,20 +1140,12 @@ static int fimc_is_ischain_loadsetf(struct fimc_is_device_ischain *device,
 	int fw_requested = 1;
 	u32 retry;
 	int fw_load_ret = 0;
-	int position;
 
 	mdbgd_ischain("%s\n", device, __func__);
 
-	if (IS_ERR_OR_NULL(device->sensor)) {
-		err("sensor device is NULL");
-		ret = -EINVAL;
-		goto out;
-	}
-
-	position = device->sensor->position;
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
-	fp = filp_open(vender->setfile_path[position], O_RDONLY, 0);
+	fp = filp_open(vender->setfile_path, O_RDONLY, 0);
 	if (IS_ERR_OR_NULL(fp)) {
 		fw_load_ret = fimc_is_vender_fw_filp_open(vender, &fp, FIMC_IS_BIN_SETFILE);
 		if(fw_load_ret == FW_SKIP) {
@@ -1165,8 +1158,7 @@ static int fimc_is_ischain_loadsetf(struct fimc_is_device_ischain *device,
 
 	fw_requested = 0;
 	fsize = fp->f_path.dentry->d_inode->i_size;
-	info("start(%d), file path %s, size %ld Bytes\n",
-		fw_load_ret, vender->setfile_path[position], fsize);
+	info("start(%d), file path %s, size %ld Bytes\n", fw_load_ret, vender->setfile_path, fsize);
 
 	buf = vmalloc(fsize);
 	if (!buf) {
@@ -1194,11 +1186,11 @@ request_fw:
 
 		retry = 4;
 		ret = request_firmware((const struct firmware **)&fw_blob,
-			vender->request_setfile_path[position], &device->pdev->dev);
+			vender->request_setfile_path, &device->pdev->dev);
 		while (--retry && ret) {
 			mwarn("request_firmware is fail(%d)", device, ret);
 			ret = request_firmware((const struct firmware **)&fw_blob,
-				vender->request_setfile_path[position], &device->pdev->dev);
+				vender->request_setfile_path, &device->pdev->dev);
 		}
 
 		if (!retry) {
@@ -1832,7 +1824,6 @@ static int fimc_is_itf_init_process_start(struct fimc_is_device_ischain *device)
 	return ret;
 }
 
-#ifdef ENABLE_IS_CORE
 static int fimc_is_itf_init_process_stop(struct fimc_is_device_ischain *device)
 {
 	int ret = 0;
@@ -1862,7 +1853,6 @@ static int fimc_is_itf_init_process_stop(struct fimc_is_device_ischain *device)
 #endif
 	return ret;
 }
-#endif
 
 int fimc_is_itf_i2c_lock(struct fimc_is_device_ischain *this,
 	int i2c_clk, bool lock)
@@ -2210,8 +2200,10 @@ int fimc_is_ischain_runtime_suspend(struct device *dev)
 #if defined (CONFIG_HOTPLUG_CPU) && defined (FIMC_IS_ONLINE_CPU_MIN)
 	pm_qos_remove_request(&exynos_isp_qos_cpu_online_min);
 #endif
+#if !defined(ENABLE_IS_CORE)
 	fimc_is_hardware_runtime_suspend(&core->hardware);
-#ifdef CAMERA_HW_BIG_DATA_FILE_IO
+#endif
+#ifdef USE_CAMERA_HW_BIG_DATA
 	if (fimc_is_sec_need_update_to_file())
 		fimc_is_sec_copy_err_cnt_to_file();
 #endif
@@ -3216,7 +3208,6 @@ static int fimc_is_ischain_open(struct fimc_is_device_ischain *device)
 	device->margin_height	= 0;
 	device->sensor		= NULL;
 	device->module		= 0;
-	device->vid_to_vra	= 0;
 
 #ifdef ENABLE_IS_CORE
 	offset_region = (FW_MEM_SIZE - ((device->instance + 1) * PARAM_REGION_SIZE));
@@ -3488,7 +3479,7 @@ static int fimc_is_ischain_init(struct fimc_is_device_ischain *device,
 		}
 	}
 
-#if defined(CONFIG_COMPANION_USE) && defined(ENABLE_IS_CORE)
+#ifdef CONFIG_COMPANION_USE
 	if (module->ext.preprocessor_con.product_name != PREPROCESSOR_NAME_NOTHING) {
 		int waiting = 0;
 
@@ -3510,7 +3501,7 @@ static int fimc_is_ischain_init(struct fimc_is_device_ischain *device,
 	}
 #endif
 
-	ret = fimc_is_vender_setfile_sel(vender, module->setfile_name, module->position);
+	ret = fimc_is_vender_setfile_sel(vender, module->setfile_name);
 	if (ret) {
 		merr("fimc_is_vender_setfile_sel is fail(%d)", device, ret);
 		goto p_err;
@@ -3556,7 +3547,6 @@ static int fimc_is_ischain_init(struct fimc_is_device_ischain *device,
 		goto p_err;
 	}
 
-#ifdef ENABLE_IS_CORE
 	if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state)) {
 		ret = fimc_is_itf_stream_off(device);
 		if (ret) {
@@ -3570,7 +3560,6 @@ static int fimc_is_ischain_init(struct fimc_is_device_ischain *device,
 		merr("fimc_is_itf_init_process_stop is fail", device);
 		goto p_err;
 	}
-#endif
 
 #ifdef MEASURE_TIME
 #ifdef MONITOR_TIME
@@ -3978,21 +3967,6 @@ int fimc_is_ischain_3aa_close(struct fimc_is_device_ischain *device,
 		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
 			fimc_is_itf_sudden_stop_wrap(device, device->instance);
 		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
-		if (test_bit(FIMC_IS_HAL_DEBUG_SUDDEN_DEAD_DETECT, &sysfs_debug.hal_debug_mode)) {
-			msleep(sysfs_debug.hal_debug_delay);
-			panic("HAL sudden group close #1");
-		}
-	}
-
-	if (group->head && test_bit(FIMC_IS_GROUP_START, &group->head->state)) {
-		mgwarn("sudden group close", device, group);
-		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
-			fimc_is_itf_sudden_stop_wrap(device, device->instance);
-		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
-		if (test_bit(FIMC_IS_HAL_DEBUG_SUDDEN_DEAD_DETECT, &sysfs_debug.hal_debug_mode)) {
-			msleep(sysfs_debug.hal_debug_delay);
-			panic("HAL sudden group close #2");
-		}
 	}
 
 	ret = fimc_is_ischain_3aa_stop(device, queue);
@@ -4261,21 +4235,6 @@ int fimc_is_ischain_isp_close(struct fimc_is_device_ischain *device,
 		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
 			fimc_is_itf_sudden_stop_wrap(device, device->instance);
 		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
-		if (test_bit(FIMC_IS_HAL_DEBUG_SUDDEN_DEAD_DETECT, &sysfs_debug.hal_debug_mode)) {
-			msleep(sysfs_debug.hal_debug_delay);
-			panic("HAL sudden group close #1");
-		}
-	}
-
-	if (group->head && test_bit(FIMC_IS_GROUP_START, &group->head->state)) {
-		mgwarn("sudden group close", device, group);
-		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
-			fimc_is_itf_sudden_stop_wrap(device, device->instance);
-		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
-		if (test_bit(FIMC_IS_HAL_DEBUG_SUDDEN_DEAD_DETECT, &sysfs_debug.hal_debug_mode)) {
-			msleep(sysfs_debug.hal_debug_delay);
-			panic("HAL sudden group close #2");
-		}
 	}
 
 	ret = fimc_is_ischain_isp_stop(device, queue);
@@ -4548,21 +4507,6 @@ int fimc_is_ischain_dis_close(struct fimc_is_device_ischain *device,
 		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
 			fimc_is_itf_sudden_stop_wrap(device, device->instance);
 		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
-		if (test_bit(FIMC_IS_HAL_DEBUG_SUDDEN_DEAD_DETECT, &sysfs_debug.hal_debug_mode)) {
-			msleep(sysfs_debug.hal_debug_delay);
-			panic("HAL sudden group close #1");
-		}
-	}
-
-	if (group->head && test_bit(FIMC_IS_GROUP_START, &group->head->state)) {
-		mgwarn("sudden group close", device, group);
-		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
-			fimc_is_itf_sudden_stop_wrap(device, device->instance);
-		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
-		if (test_bit(FIMC_IS_HAL_DEBUG_SUDDEN_DEAD_DETECT, &sysfs_debug.hal_debug_mode)) {
-			msleep(sysfs_debug.hal_debug_delay);
-			panic("HAL sudden group close #2");
-		}
 	}
 
 	ret = fimc_is_ischain_dis_stop(device, queue);
@@ -4833,21 +4777,6 @@ int fimc_is_ischain_mcs_close(struct fimc_is_device_ischain *device,
 		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
 			fimc_is_itf_sudden_stop_wrap(device, device->instance);
 		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
-		if (test_bit(FIMC_IS_HAL_DEBUG_SUDDEN_DEAD_DETECT, &sysfs_debug.hal_debug_mode)) {
-			msleep(sysfs_debug.hal_debug_delay);
-			panic("HAL sudden group close #1");
-		}
-	}
-
-	if (group->head && test_bit(FIMC_IS_GROUP_START, &group->head->state)) {
-		mgwarn("sudden group close", device, group);
-		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
-			fimc_is_itf_sudden_stop_wrap(device, device->instance);
-		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
-		if (test_bit(FIMC_IS_HAL_DEBUG_SUDDEN_DEAD_DETECT, &sysfs_debug.hal_debug_mode)) {
-			msleep(sysfs_debug.hal_debug_delay);
-			panic("HAL sudden group close #2");
-		}
 	}
 
 	ret = fimc_is_ischain_mcs_stop(device, queue);
@@ -5112,21 +5041,6 @@ int fimc_is_ischain_vra_close(struct fimc_is_device_ischain *device,
 		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
 			fimc_is_itf_sudden_stop_wrap(device, device->instance);
 		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
-		if (test_bit(FIMC_IS_HAL_DEBUG_SUDDEN_DEAD_DETECT, &sysfs_debug.hal_debug_mode)) {
-			msleep(sysfs_debug.hal_debug_delay);
-			panic("HAL sudden group close #1");
-		}
-	}
-
-	if (group->head && test_bit(FIMC_IS_GROUP_START, &group->head->state)) {
-		mgwarn("sudden group close", device, group);
-		if (!test_bit(FIMC_IS_ISCHAIN_REPROCESSING, &device->state))
-			fimc_is_itf_sudden_stop_wrap(device, device->instance);
-		set_bit(FIMC_IS_GROUP_REQUEST_FSTOP, &group->state);
-		if (test_bit(FIMC_IS_HAL_DEBUG_SUDDEN_DEAD_DETECT, &sysfs_debug.hal_debug_mode)) {
-			msleep(sysfs_debug.hal_debug_delay);
-			panic("HAL sudden group close #2");
-		}
 	}
 
 	ret = fimc_is_ischain_vra_stop(device, queue);
@@ -5843,9 +5757,6 @@ static int fimc_is_ischain_3aa_shot(struct fimc_is_device_ischain *device,
 	struct camera2_node_group *node_group;
 	struct camera2_node ldr_node = {0, };
 	u32 setfile_save = 0;
-#ifdef ENABLE_INIT_AWB
-	struct fimc_is_device_sensor *sensor;
-#endif
 
 #ifdef ENABLE_FAST_SHOT
 	uint32_t af_trigger_bk;
@@ -5865,9 +5776,7 @@ static int fimc_is_ischain_3aa_shot(struct fimc_is_device_ischain *device,
 
 	frame = NULL;
 	group = &device->group_3aa;
-#ifdef ENABLE_INIT_AWB
-	sensor = device->sensor;
-#endif
+
 	framemgr = GET_HEAD_GROUP_FRAMEMGR(group);
 	if (!framemgr) {
 		merr("framemgr is NULL", device);
@@ -5964,26 +5873,6 @@ static int fimc_is_ischain_3aa_shot(struct fimc_is_device_ischain *device,
 	/* fd information copy */
 #if !defined(ENABLE_SHARED_METADATA)
 	memcpy(&frame->shot->uctl.fdUd, &device->cur_peri_ctl.fdUd, sizeof(struct camera2_fd_uctl));
-#endif
-
-#ifdef ENABLE_INIT_AWB
-	if (sensor) {
-		if ((frame->shot->ctl.aa.awbMode == AA_AWBMODE_WB_AUTO)
-				&& (frame->fcount <= sensor->init_wb_cnt)
-				&& (frame->shot->ctl.aa.sceneMode == AA_SCENE_MODE_FACE_LOCK)
-				&& memcmp(sensor->init_wb, sensor->chk_wb, sizeof(float) * WB_GAIN_COUNT)) {
-
-			/* for applying init AWB feature,
-			 * 1. awbMode is AA_AWB_MODE_WB_AUTO
-			 * 2. it is applied at only initial count frame num
-			 * 3. set only last_ae value exist
-			 */
-			memcpy(frame->shot->ctl.color.gains, sensor->init_wb, sizeof(float) * WB_GAIN_COUNT);
-			frame->shot->ctl.aa.awbMode = AA_AWBMODE_OFF;
-
-			minfo("F[%d]init AWB(applied cnt:%d)", sensor, frame->fcount, sensor->init_wb_cnt);
-		}
-	}
 #endif
 
 	PROGRAM_COUNT(9);

@@ -59,9 +59,6 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/ipi.h>
 
-DEFINE_PER_CPU_READ_MOSTLY(int, cpu_number);
-EXPORT_PER_CPU_SYMBOL(cpu_number);
-
 /*
  * as from 2.5, kernels no longer have an init_tasks structure
  * so we need some other way of telling a new secondary core
@@ -77,7 +74,7 @@ enum ipi_msg_type {
 	IPI_TIMER,
 	IPI_IRQ_WORK,
 	IPI_WAKEUP,
-	IPI_SGI_15_IRQ = 15
+	IPI_SGI_15_IRQ = 15,
 };
 
 /*
@@ -102,9 +99,6 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 	 * We need to tell the secondary core where to find its stack and the
 	 * page tables.
 	 */
-#ifdef CONFIG_THREAD_INFO_IN_TASK
-	secondary_data.task = idle;
-#endif
 	secondary_data.stack = task_stack_page(idle) + THREAD_START_SP;
 	__flush_dcache_area(&secondary_data, sizeof(secondary_data));
 
@@ -128,9 +122,6 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 		pr_err("CPU%u: failed to boot: %d\n", cpu, ret);
 	}
 
-#ifdef CONFIG_THREAD_INFO_IN_TASK
-	secondary_data.task = NULL;
-#endif
 	secondary_data.stack = NULL;
 	restore_pcpu_tick(cpu);
 
@@ -149,10 +140,7 @@ static void smp_store_cpu_info(unsigned int cpuid)
 asmlinkage void secondary_start_kernel(void)
 {
 	struct mm_struct *mm = &init_mm;
-	unsigned int cpu;
-
-	cpu = task_cpu(current);
-	set_my_cpu_offset(per_cpu_offset(cpu));
+	unsigned int cpu = smp_processor_id();
 
 	/*
 	 * All kernel threads share the same mm context; grab a
@@ -161,11 +149,15 @@ asmlinkage void secondary_start_kernel(void)
 	atomic_inc(&mm->mm_count);
 	current->active_mm = mm;
 
+	set_my_cpu_offset(per_cpu_offset(smp_processor_id()));
+
 	/*
 	 * TTBR0 is only used for the identity mapping at this stage. Make it
 	 * point to zero page to avoid speculatively fetching new entries.
 	 */
-	cpu_uninstall_idmap();
+	cpu_set_reserved_ttbr0();
+	local_flush_tlb_all();
+	cpu_set_default_tcr_t0sz();
 
 	preempt_disable();
 	trace_hardirqs_off();
@@ -202,6 +194,7 @@ asmlinkage void secondary_start_kernel(void)
 	set_cpu_online(cpu, true);
 	complete(&cpu_running);
 
+	local_dbg_enable();
 	local_irq_enable();
 	local_async_enable();
 
@@ -349,8 +342,8 @@ void __init smp_cpus_done(unsigned int max_cpus)
 
 void __init smp_prepare_boot_cpu(void)
 {
-	set_my_cpu_offset(per_cpu_offset(smp_processor_id()));
 	cpuinfo_store_boot_cpu();
+	set_my_cpu_offset(per_cpu_offset(smp_processor_id()));
 }
 
 static u64 __init of_get_cpu_mpidr(struct device_node *dn)
@@ -485,17 +478,6 @@ acpi_map_gic_cpu_interface(struct acpi_madt_generic_interrupt *processor)
 
 	/* map the logical cpu id to cpu MPIDR */
 	cpu_logical_map(cpu_count) = hwid;
-
-	/*
-	 * Set-up the ACPI parking protocol cpu entries
-	 * while initializing the cpu_logical_map to
-	 * avoid parsing MADT entries multiple times for
-	 * nothing (ie a valid cpu_logical_map entry should
-	 * contain a valid parking protocol data set to
-	 * initialize the cpu if the parking protocol is
-	 * the only available enable method).
-	 */
-	acpi_set_mailbox_entry(cpu_count, processor);
 
 	cpu_count++;
 }
@@ -660,8 +642,6 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 		if (max_cpus == 0)
 			break;
 
-		per_cpu(cpu_number, cpu) = cpu;
-
 		if (cpu == smp_processor_id())
 			continue;
 
@@ -692,7 +672,7 @@ static const char *ipi_types[NR_IPI] __tracepoint_string = {
 	S(IPI_CPU_STOP, "CPU stop interrupts"),
 	S(IPI_TIMER, "Timer broadcast interrupts"),
 	S(IPI_IRQ_WORK, "IRQ work interrupts"),
-	S(IPI_WAKEUP, "CPU wake-up interrupts"),
+	S(IPI_WAKEUP, "CPU Wakeup by interrupts"),
 };
 
 static void smp_cross_call(const struct cpumask *target, unsigned int ipinr)
@@ -735,13 +715,6 @@ void arch_send_call_function_single_ipi(int cpu)
 {
 	smp_cross_call(cpumask_of(cpu), IPI_CALL_FUNC_SINGLE);
 }
-
-#ifdef CONFIG_ARM64_ACPI_PARKING_PROTOCOL
-void arch_send_wakeup_ipi_mask(const struct cpumask *mask)
-{
-	smp_cross_call(mask, IPI_WAKEUP);
-}
-#endif
 
 #ifdef CONFIG_IRQ_WORK
 void arch_irq_work_raise(void)
@@ -831,20 +804,15 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 		break;
 #endif
 
-#ifdef CONFIG_ARM64_ACPI_PARKING_PROTOCOL
 	case IPI_WAKEUP:
-		WARN_ONCE(!acpi_parking_protocol_valid(cpu),
-			  "CPU%u: Wake-up IPI outside the ACPI parking protocol\n",
-			  cpu);
+		pr_debug("%s: IPI_WAKEUP\n", __func__);
 		break;
-#endif
 
 	case IPI_SGI_15_IRQ:
 		pr_debug("%s: Interrupt masking bit of core [%dth] is cleared by "
 			"force EL3 to print out kernel panic message.\n"
 			, __func__, smp_processor_id());
 		break;
-
 	default:
 		pr_crit("CPU%u: Unknown IPI message 0x%x\n", cpu, ipinr);
 		break;

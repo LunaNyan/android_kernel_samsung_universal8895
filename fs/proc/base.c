@@ -1546,13 +1546,18 @@ static const struct file_operations proc_pid_set_comm_operations = {
 static int proc_exe_link(struct dentry *dentry, struct path *exe_path)
 {
 	struct task_struct *task;
+	struct mm_struct *mm;
 	struct file *exe_file;
 
 	task = get_proc_task(d_inode(dentry));
 	if (!task)
 		return -ENOENT;
-	exe_file = get_task_exe_file(task);
+	mm = get_task_mm(task);
 	put_task_struct(task);
+	if (!mm)
+		return -ENOENT;
+	exe_file = get_mm_exe_file(mm);
+	mmput(mm);
 	if (exe_file) {
 		*exe_path = exe_file->f_path;
 		path_get(&exe_file->f_path);
@@ -2241,92 +2246,6 @@ static const struct file_operations proc_timers_operations = {
 	.release	= seq_release_private,
 };
 
-static ssize_t timerslack_ns_write(struct file *file, const char __user *buf,
-					size_t count, loff_t *offset)
-{
-	struct inode *inode = file_inode(file);
-	struct task_struct *p;
-	u64 slack_ns;
-	int err;
-
-	err = kstrtoull_from_user(buf, count, 10, &slack_ns);
-	if (err < 0)
-		return err;
-
-	p = get_proc_task(inode);
-	if (!p)
-		return -ESRCH;
-
-	if (p != current) {
-		if (!capable(CAP_SYS_NICE)) {
-			count = -EPERM;
-			goto out;
-		}
-
-		err = security_task_setscheduler(p);
-		if (err) {
-			count = err;
-			goto out;
-		}
-	}
-
-	task_lock(p);
-	if (slack_ns == 0)
-		p->timer_slack_ns = p->default_timer_slack_ns;
-	else
-		p->timer_slack_ns = slack_ns;
-	task_unlock(p);
-
-out:
-	put_task_struct(p);
-
-	return count;
-}
-
-static int timerslack_ns_show(struct seq_file *m, void *v)
-{
-	struct inode *inode = m->private;
-	struct task_struct *p;
-	int err = 0;
-
-	p = get_proc_task(inode);
-	if (!p)
-		return -ESRCH;
-
-	if (p != current) {
-
-		if (!capable(CAP_SYS_NICE)) {
-			err = -EPERM;
-			goto out;
-		}
-		err = security_task_getscheduler(p);
-		if (err)
-			goto out;
-	}
-
-	task_lock(p);
-	seq_printf(m, "%lu\n", p->timer_slack_ns);
-	task_unlock(p);
-
-out:
-	put_task_struct(p);
-
-	return err;
-}
-
-static int timerslack_ns_open(struct inode *inode, struct file *filp)
-{
-	return single_open(filp, timerslack_ns_show, inode);
-}
-
-static const struct file_operations proc_pid_set_timerslack_ns_operations = {
-	.open		= timerslack_ns_open,
-	.read		= seq_read,
-	.write		= timerslack_ns_write,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
 static int proc_pident_instantiate(struct inode *dir,
 	struct dentry *dentry, struct task_struct *task, const void *ptr)
 {
@@ -2839,7 +2758,6 @@ static const struct pid_entry tgid_base_stuff[] = {
 	REG("cmdline",    S_IRUGO, proc_pid_cmdline_ops),
 	ONE("stat",       S_IRUGO, proc_tgid_stat),
 	ONE("statm",      S_IRUGO, proc_pid_statm),
-	ONE("statlmkd",      S_IRUGO, proc_pid_statlmkd),
 	REG("maps",       S_IRUGO, proc_pid_maps_operations),
 #ifdef CONFIG_NUMA
 	REG("numa_maps",  S_IRUGO, proc_pid_numa_maps_operations),
@@ -2906,7 +2824,6 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_CHECKPOINT_RESTORE
 	REG("timers",	  S_IRUGO, proc_timers_operations),
 #endif
-	REG("timerslack_ns", S_IRUGO|S_IWUGO, proc_pid_set_timerslack_ns_operations),
 };
 
 static int proc_tgid_base_readdir(struct file *file, struct dir_context *ctx)
@@ -3148,8 +3065,6 @@ int proc_pid_readdir(struct file *file, struct dir_context *ctx)
 	     iter.tgid += 1, iter = next_tgid(ns, iter)) {
 		char name[PROC_NUMBUF];
 		int len;
-
-		cond_resched();
 		if (!has_pid_permissions(ns, iter.task, 2))
 			continue;
 
@@ -3230,7 +3145,6 @@ static const struct pid_entry tid_base_stuff[] = {
 	REG("cmdline",   S_IRUGO, proc_pid_cmdline_ops),
 	ONE("stat",      S_IRUGO, proc_tid_stat),
 	ONE("statm",     S_IRUGO, proc_pid_statm),
-	ONE("statlmkd",      S_IRUGO, proc_pid_statlmkd),
 	REG("maps",      S_IRUGO, proc_tid_maps_operations),
 #ifdef CONFIG_PROC_CHILDREN
 	REG("children",  S_IRUGO, proc_tid_children_operations),

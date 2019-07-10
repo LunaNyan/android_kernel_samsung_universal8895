@@ -265,7 +265,7 @@
 			interrupts = <6 0 0>;
 			interrupt-parent = <&gpa3>;
 			pinctrl-names = "default";
-			pinctrl-0 = <&pmic_irq &pm_wrsti &g3d_dvs &smpl_warn>;
+			pinctrl-0 = <&pmic_irq &pm_wrsti &g3d_dvs>;
 			gpios = <&gpb1 3 0>, <&gpb1 2 0x2>;
 			smpl_warn_en = <1>; /* 1 : enable , 0 : disable*/
 			/* range of smpl_warn_vth */
@@ -772,8 +772,8 @@
 			};
 
 			torch {
-				torch1-gpio = <&gpc0 2 0x1>;
-				flash1-gpio = <&gpc0 1 0x1>;
+				torch1-gpio = "gpc0-2";
+				flash1-gpio = "gpc0-1";
 
 				status = "okay";
 
@@ -823,7 +823,7 @@
 			  745 769 794 819 846 873 901 930 959 990
 			  1021 1053 1086 1119 1154 1189 1225 1262 1300 1338
 			  1378 1418 1459 1500 1543 1586 1630 1674 1719 1764
-			  1811 1857 1904 1952 2000 2048 2096 2145 2194 2243
+		 	  1811 1857 1904 1952 2000 2048 2096 2145 2194 2243
 			  2291 2342 2389 2439 2487 2537 2585 2633 2681 2726
 			  2774 2819 2865 2910 2954 2997 3038 3081 3122 3161
 			  3199 3238 3275 3311 3345 3379 3413 3445 3475 3504
@@ -871,6 +871,7 @@
 		sd-uhs-sdr50;
 		sd-uhs-sdr104;
 		card-detect-gpio;
+		only_once_tune;
 		mmc-ddr-1_8v;
 		supports-4bit;
 		supports-cmd23;
@@ -882,7 +883,7 @@
 		desc-size = <4>;
 		card-detect-delay = <200>;
 		data-timeout = <200>;
-		hto-timeout = <80>;
+		hto-timeout = <550>;
 		qos-int-level = <400000>;
 		clock-frequency = <800000000>;
 		samsung,dw-mshc-sdr-timing = <3 0 2 0>;
@@ -1035,6 +1036,7 @@
 			stm,regulator_dvdd = "tsp_io";
 			stm,regulator_avdd = "tsp_avdd";
 			stm,project_name = "Dream1", "G950";
+			stm,use_pressure = <1>;
 			stm,firmware_name = "tsp_stm/fts9cd56_dream1.fw", "tsp_stm/fts9cd56_dream1.fw";
 			stm,device_gpio = <&gpa4 6 0>;
 			support_dex_mode;
@@ -1059,6 +1061,7 @@
 			sec,regulator_dvdd = "tsp_io";
 			sec,regulator_avdd = "tsp_avdd";
 			sec,regulator_boot_on;
+			sec,always_lpmode = <1>;
 			sec,pat_function = <2>;
 			sec,afe_base = <0x0121>;
 			sec,project_name = "Dream1", "G950";
@@ -1193,9 +1196,9 @@
 	exynos-powermode {
 		wakeup-masks {
 			wakeup-mask4 {
-				mask = <0x4>,	     <0x4>,	   <0x4>,	 <0x4>,
+				mask = <0x4>,	     <0x4>, 	   <0x4>,	 <0x4>,
 				       <0x4>,        <0x4>,        <0x4>,        <0x4>,
-				       <0x4>,	     <0x4>,	   <0x4>,        <0x4>;
+				       <0x4>, 	     <0x4>, 	   <0x4>,        <0x4>;
 				reg-offset = <0x644>;
 			};
 		};
@@ -1371,11 +1374,6 @@
 							cirrus,bin-file = "None";
 							cirrus,append-sr;
 						};
-						TRACE {
-							cirrus,wmfw-file = "trace";
-							cirrus,bin-file = "None";
-							cirrus,compr-caps = <1 8 0x4 1 8000 16000 24000 32000 48000>;
-						};
 					};
 				};
 			};
@@ -1481,7 +1479,8 @@
 				 "SPEAKER", "HiFi Playback",
 				 "VOUTPUTCALL", "ABOX UAIF2 Playback",
 				 "ABOX UAIF2 Capture", "VINPUTCALL",
-				 "VTS Virtual Output", "VTS Virtual Output Mux";
+				 "VTS Virtual Output", "VTS Virtual Output Mux",
+				 "VTS Virtual Output Mux", "DMIC1";
 
 		samsung,codec = <&abox &vts>;
 		samsung,aux = <&abox_effect>;
@@ -1673,9 +1672,9 @@
 
 	vts: vts@0x14020000 {
 		status = "okay";
-		lpsd-gain = <0>;
-		dmic-gain = <0>;
-		amic-gain = <4>;
+		lpsd-gain = <1>;
+		dmic-gain = <1>;
+		amic-gain = <0>;
 	};
 
 	pinctrl@164B0000 {
@@ -1951,22 +1950,6 @@
 		id = <0>; /* bns_id */
 		torch-gpio = <&gpc0 2 0x1>;
 		flash-gpio = <&gpc0 1 0x1>;
-	};
-
-	sec_abc {
-		compatible = "samsung,sec_abc";
-		status = "okay";
-
-		gpu {
-			gpu,label="GPU fault";
-			gpu,threshold_count=<20>;
-			gpu,threshold_time=<1200>;
-		};
-		aicl {
-			aicl,label="battery aicl";
-			aicl,threshold_count=<5>;
-			aicl,threshold_time=<300>;
-		};
 	};
 
 	fimc_is@13140000 {
@@ -2328,8 +2311,8 @@
 
 				video_high_speed_60fps_int_cam = <DVFS_INT_CAM_L0>;
 				video_high_speed_60fps_cam = <DVFS_CAM_L0>;
-				video_high_speed_60fps_mif = <DVFS_MIF_L4>;
-				video_high_speed_60fps_int = <DVFS_INT_L4>;
+				video_high_speed_60fps_mif = <DVFS_MIF_L5>;
+				video_high_speed_60fps_int = <DVFS_INT_L5>;
 				video_high_speed_60fps_i2c = <0>;
 				video_high_speed_60fps_hpg = <1>;
 
@@ -2343,9 +2326,9 @@
 				video_high_speed_240fps_int_cam = <DVFS_INT_CAM_L0>;
 				video_high_speed_240fps_cam = <DVFS_CAM_L0>;
 				video_high_speed_240fps_mif = <DVFS_MIF_L2>;
-				video_high_speed_240fps_int = <DVFS_INT_L1>;
+				video_high_speed_240fps_int = <DVFS_INT_L2>;
 				video_high_speed_240fps_i2c = <0>;
-				video_high_speed_240fps_hpg = <6>;
+				video_high_speed_240fps_hpg = <1>;
 
 				ext_front_int_cam = <DVFS_INT_CAM_L3>;
 				ext_front_cam = <DVFS_CAM_L2>;
@@ -2701,19 +2684,7 @@
 		};
 
 		internal_vc {
-			/* vc_list = <channel, data_type, buffer_offset>
-			 * channel : Output VC channel
-			 *  - Supported channels are 1(VC1), 2(VC2), 3(VC3)
-			 *  - Since channel 0(VC0) is dedicated to image data, it can not be used
-			 * data_type : Output type of VC channel
-			 *  - Value 0 VC_NOTHING
-			 *  - Value 1 VC_TAIL_MODE_PDAF
-			 *  - Value 2 VC_MIPI_STAT
-			 * buffer_offset : get_vc_dma_buf offset value of buffer to return when using interface
-			 *  - Value 0 N buffer return
-			 *  - Value 1 N-1 buffer return
-			 */
-			vc_list = <2 2 1>;
+			vc_list = <2 2>; /* channel, data_type */
 		};
 	};
 
@@ -2765,7 +2736,7 @@
 		};
 
 		internal_vc {
-			vc_list = <2 2 1>;
+			vc_list = <2 2>; /* channel, data_type */
 		};
 	};
 
@@ -2818,7 +2789,7 @@
 		};
 
 		internal_vc {
-			vc_list = <2 2 1>;
+			vc_list = <2 2>; /* channel, data_type */
 		};
 	};
 
@@ -2838,8 +2809,6 @@
 		sensor_i2c_ch = <1>; /* I2C 1 */
 		sensor_i2c_addr = <0x20>;
 
-		use_initial_ae;
-
 		gpio_mclk = <&gpk0 1 0x1>;
 		gpio_reset = <&gpc0 3 0x1>; /* sensor reset */
 		gpio_prep_reset = <&gpc1 1 0x1>; /* preprocessor reset */
@@ -2868,7 +2837,7 @@
 		};
 
 		internal_vc {
-			vc_list = <2 2 1>;
+			vc_list = <2 2>; /* channel, data_type */
 		};
 	};
 
@@ -2887,8 +2856,6 @@
 		mclk_ch = <1>;
 		sensor_i2c_ch = <1>; /* I2C 1 */
 		sensor_i2c_addr = <0x6A>;
-		
-		use_initial_ae;
 
 		gpio_mclk = <&gpk0 1 0x1>;
 		gpio_reset = <&gpc0 3 0x1>; /* sensor reset */
@@ -2918,7 +2885,7 @@
 		};
 
 		internal_vc {
-			vc_list = <2 2 1>;
+			vc_list = <2 2>; /* channel, data_type */
 		};
 	};
 
@@ -2937,8 +2904,6 @@
 		mclk_ch = <1>;
 		sensor_i2c_ch = <1>; /* I2C 1 */
 		sensor_i2c_addr = <0x20>;
-
-		use_initial_ae;
 
 		gpio_mclk = <&gpk0 1 0x1>;
 		gpio_reset = <&gpc0 3 0x1>; /* sensor reset */
@@ -2982,8 +2947,6 @@
 		mclk_ch = <1>;
 		sensor_i2c_ch = <1>; /* I2C 1 */
 		sensor_i2c_addr = <0x6A>;
-
-		use_initial_ae;
 
 		gpio_mclk = <&gpk0 1 0x1>;
 		gpio_reset = <&gpc0 3 0x1>; /* sensor reset */
@@ -3172,7 +3135,6 @@
 	};
 
 	serial_1: uart@10830000 {
-		samsung,uart-logging;
 		status = "okay";
 	};
 
@@ -3231,7 +3193,7 @@
 		regulator,3p0 = "vdd_ddi_3p0";
 		regulator,1p8 = "vdd_ddi_1p8";
 		regulator,1p6 = "vdd_ddi_1p6";
-
+		
 		#address-cells = <2>;
 		#size-cells = <1>;
 		ranges;
@@ -3254,37 +3216,8 @@
 
 				/* default panel */
 				0x000000 0x000000 0x0   /* not found : s6e3ha6_dream_a3_da_default */
-			>;
-		};
-	};
-
-	nad_balancer {
-		compatible = "samsung,sec_nad_balancer";
-		status = "okay";
-
-			qos {
-				cl0 {
-					qos,label="LIT";
-					qos,delay_time=<9>;
-					qos,table_size=<9>;
-					qos,table=<1690000 1456000 1248000 1053000 949000 832000 715000 598000 455000>;
-				};
-
-				cl1 {
-					qos,label="BIG";
-					qos,delay_time=<8>;
-					qos,table_size=<13>;
-					qos,table=<2314000 2158000 2002000 1937000 1807000 1703000 1469000 1261000
-						1170000 1066000 962000 858000 741000>;
-				};
-
-				mif {
-					qos,label="MIF";
-					qos,delay_time=<10>;
-					qos,table_size=<6>;
-					qos,table=<1794000 1540000 1352000 1014000 845000 676000>;
-				};
-			};
+			>;                   
+		}; 
 	};
 
 	argos {

@@ -515,23 +515,25 @@ static unsigned long isolate_freepages_block(struct compact_control *cc,
 
 		/* Found a free page, break it into order-0 pages */
 		isolated = split_free_page(page);
-		if (!isolated)
-			break;
-
 		total_isolated += isolated;
-		cc->nr_freepages += isolated;
 		for (i = 0; i < isolated; i++) {
 			list_add(&page->lru, freelist);
 			page++;
 		}
-		if (!strict && cc->nr_migratepages <= cc->nr_freepages) {
-			blockpfn += isolated;
-			break;
+
+		/* If a page was split, advance to the end of it */
+		if (isolated) {
+			cc->nr_freepages += isolated;
+			if (!strict &&
+				cc->nr_migratepages <= cc->nr_freepages) {
+				blockpfn += isolated;
+				break;
+			}
+
+			blockpfn += isolated - 1;
+			cursor += isolated - 1;
+			continue;
 		}
-		/* Advance to the end of split page */
-		blockpfn += isolated - 1;
-		cursor += isolated - 1;
-		continue;
 
 isolate_fail:
 		if (strict)
@@ -540,9 +542,6 @@ isolate_fail:
 			continue;
 
 	}
-
-	if (locked)
-		spin_unlock_irqrestore(&cc->zone->lock, flags);
 
 	/*
 	 * There is a tiny chance that we have read bogus compound_order(),
@@ -564,6 +563,9 @@ isolate_fail:
 	 */
 	if (strict && blockpfn < end_pfn)
 		total_isolated = 0;
+
+	if (locked)
+		spin_unlock_irqrestore(&cc->zone->lock, flags);
 
 	/* Update the pageblock-skip if the whole pageblock was scanned */
 	if (blockpfn == end_pfn)
@@ -1015,6 +1017,7 @@ static void isolate_freepages(struct compact_control *cc)
 				block_end_pfn = block_start_pfn,
 				block_start_pfn -= pageblock_nr_pages,
 				isolate_start_pfn = block_start_pfn) {
+
 		/*
 		 * This can iterate a massively long zone without finding any
 		 * suitable migration targets, so periodically check if we need
@@ -1037,34 +1040,33 @@ static void isolate_freepages(struct compact_control *cc)
 		if (!isolation_suitable(cc, page))
 			continue;
 
-		if (is_migrate_rbin_page(page))
-			continue;
-
 		/* Found a block suitable for isolating free pages from. */
-		isolate_freepages_block(cc, &isolate_start_pfn, block_end_pfn,
-					freelist, false);
+		isolate_freepages_block(cc, &isolate_start_pfn,
+					block_end_pfn, freelist, false);
 
 		/*
-		 * If we isolated enough freepages, or aborted due to lock
-		 * contention, terminate.
+		 * If we isolated enough freepages, or aborted due to async
+		 * compaction being contended, terminate the loop.
+		 * Remember where the free scanner should restart next time,
+		 * which is where isolate_freepages_block() left off.
+		 * But if it scanned the whole pageblock, isolate_start_pfn
+		 * now points at block_end_pfn, which is the start of the next
+		 * pageblock.
+		 * In that case we will however want to restart at the start
+		 * of the previous pageblock.
 		 */
 		if ((cc->nr_freepages >= cc->nr_migratepages)
 							|| cc->contended) {
-			if (isolate_start_pfn >= block_end_pfn) {
-				/*
-				 * Restart at previous pageblock if more
-				 * freepages can be isolated next time.
-				 */
+			if (isolate_start_pfn >= block_end_pfn)
 				isolate_start_pfn =
 					block_start_pfn - pageblock_nr_pages;
-			}
 			break;
-		} else if (isolate_start_pfn < block_end_pfn) {
+		} else {
 			/*
-			 * If isolation failed early, do not continue
-			 * needlessly.
+			 * isolate_freepages_block() should not terminate
+			 * prematurely unless contended, or isolated enough
 			 */
-			break;
+			VM_BUG_ON(isolate_start_pfn < block_end_pfn);
 		}
 	}
 
@@ -1184,8 +1186,6 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 		if (!isolation_suitable(cc, page))
 			continue;
 
-		if (is_migrate_rbin_page(page))
-			continue;
 		/*
 		 * For async compaction, also only scan in MOVABLE blocks.
 		 * Async compaction is optimistic to see if the minimum amount

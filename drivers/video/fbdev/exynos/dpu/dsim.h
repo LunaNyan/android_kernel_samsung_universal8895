@@ -17,7 +17,6 @@
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <media/v4l2-subdev.h>
-#include <linux/debugfs.h>
 
 
 #if defined(CONFIG_SOC_EXYNOS8895)
@@ -52,7 +51,6 @@ extern int dsim_log_level;
 // Only for Exynos8895 EVT 0
 #define DSIM_FIFO_SIZE  512
 #define MIPI_DSI_WRITE	0x00
-#define MIPI_DSI_WR_MEM 0x99
 
 #define dsim_err(fmt, ...)							\
 	do {									\
@@ -225,19 +223,6 @@ struct mipi_panel_drv {
 	int (*dump)(struct dsim_device *dsim);
 };
 
-
-#define MAX_UNDERRUN_LIST	10
-
-struct dsim_underrun_info {
-	ktime_t time;
-	unsigned long mif_freq;
-	unsigned long int_freq;
-	unsigned long disp_freq;
-	unsigned int prev_bw;
-	unsigned int cur_bw;
-};
-
-
 struct dsim_device {
 	int id;
 	enum dsim_state state;
@@ -248,6 +233,7 @@ struct dsim_device {
 	u32 data_lane_cnt;
 	struct phy *phy;
 	spinlock_t slock;
+
 
 	struct v4l2_subdev sd;
 	struct dsim_clks clks;
@@ -267,15 +253,9 @@ struct dsim_device {
 
 	int total_underrun_cnt;
 	int version;
-	u32 pmu_info[3];
-//#ifdef CONFIG_DUMPSTATE_LOGGING
-	struct dentry *debug_root;
-	struct dentry *debug_info;
-
-	int under_list_idx;
-	struct dsim_underrun_info under_list[MAX_UNDERRUN_LIST];
-//#endif
 };
+
+
 
 int dsim_write_data(struct dsim_device *dsim, u8 id, u8 *cmd, u32 size);
 int dsim_read_data(struct dsim_device *dsim, u8 id, u8 addr, u8 *buf, u16 size);
@@ -346,7 +326,6 @@ void dsim_reg_stop(u32 id, u32 lanes);
 void dsim_reg_wr_tx_payload(u32 id, u32 payload);
 u32 dsim_reg_header_fifo_is_empty(u32 id);
 void dsim_reg_clear_int(u32 id, u32 int_src);
-void dsim_reg_clear_int_all(u32 id);
 void dsim_reg_set_fifo_ctrl(u32 id, u32 cfg);
 void dsim_reg_enable_shadow_read(u32 id, u32 en);
 u32 dsim_reg_is_writable_fifo_state(u32 id);
@@ -366,9 +345,6 @@ u32 dsim_reg_is_pll_stable(u32 id);
 #define DSIM_IOC_ENTER_ULPS		_IOW('D', 0, u32)
 #define DSIM_IOC_DUMP			_IOW('D', 8, u32)
 #define DSIM_IOC_GET_WCLK		_IOW('D', 9, u32)
-#define DSIM_IOC_FUNC_RST		_IOW('D', 12, u32)
-#define DSIM_IOC_CLEAR_IRQ		_IOW('D', 13, u32)
-
 #ifdef CONFIG_SUPPORT_DOZE
 #define DSIM_IOC_DOZE			_IOW('D', 10, u32)
 #define DSIM_IOC_DOZE_SUSPEND	_IOW('D', 11, u32)

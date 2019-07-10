@@ -165,11 +165,11 @@ config HID_CHERRY
 	Support for Cherry Cymotion keyboard.
 
 config HID_CHICONY
-	tristate "Chicony devices"
+	tristate "Chicony Tactical pad"
 	depends on HID
 	default !EXPERT
 	---help---
-	Support for Chicony Tactical pad and special keys on Chicony keyboards.
+	Support for Chicony Tactical pad.
 
 config HID_CORSAIR
 	tristate "Corsair devices"
@@ -933,13 +933,6 @@ config HID_OVR
 	---help---
 	Support for OVR devices.
 	Say Y here if you have a OVR device.
-
-config HID_TVR
-	tristate "TVR device support"
-	depends on USB_HID
-	---help---
-	Support for TVR devices.
-	Say Y here if you have a TVR device.	
 
 config HID_MADCATZ
 	tristate "Madcatz wireless game controller support"

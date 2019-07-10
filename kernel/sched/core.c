@@ -32,7 +32,7 @@
 #include <linux/init.h>
 #include <linux/uaccess.h>
 #include <linux/highmem.h>
-#include <linux/mmu_context.h>
+#include <asm/mmu_context.h>
 #include <linux/interrupt.h>
 #include <linux/capability.h>
 #include <linux/completion.h>
@@ -76,21 +76,6 @@
 #include <linux/compiler.h>
 #include <linux/exynos-ss.h>
 
-#include <linux/sched/sysctl.h>
-#include <linux/kernel.h>
-#include <linux/kthread.h>
-#include <linux/mutex.h>
-#include <linux/workqueue.h>
-#include <linux/cpufreq.h>
-#include <linux/platform_device.h>
-#include <linux/err.h>
-#include <linux/of.h>
-#include <linux/sysfs.h>
-#include <linux/sec_sysfs.h>
-#include <linux/types.h>
-#include <linux/sched/rt.h>
-#include <linux/cpumask.h>
-
 #include <asm/switch_to.h>
 #include <asm/tlb.h>
 #include <asm/irq_regs.h>
@@ -109,8 +94,6 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
-
-#define HEAVY_TASK_LOAD_THRESHOLD 1000
 
 DEFINE_MUTEX(sched_domains_mutex);
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
@@ -1959,28 +1942,6 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	success = 1; /* we're going to change ->state */
 	cpu = task_cpu(p);
 
-	/*
-	 * Ensure we load p->on_rq _after_ p->state, otherwise it would
-	 * be possible to, falsely, observe p->on_rq == 0 and get stuck
-	 * in smp_cond_load_acquire() below.
-	 *
-	 * sched_ttwu_pending()                 try_to_wake_up()
-	 *   [S] p->on_rq = 1;                  [L] P->state
-	 *       UNLOCK rq->lock  -----.
-	 *                              \
-	 *				 +---   RMB
-	 * schedule()                   /
-	 *       LOCK rq->lock    -----'
-	 *       UNLOCK rq->lock
-	 *
-	 * [task p]
-	 *   [S] p->state = UNINTERRUPTIBLE     [L] p->on_rq
-	 *
-	 * Pairs with the UNLOCK+LOCK on rq->lock from the
-	 * last wakeup of our task and the schedule that got our task
-	 * current.
-	 */
-	smp_rmb();
 	if (p->on_rq && ttwu_remote(p, wake_flags))
 		goto stat;
 
@@ -2179,10 +2140,6 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	trace_sched_task_runnable_ratio(p, p->se.avg.hmp_load_avg);
 #endif
 	trace_sched_task_load_contrib(p, p->se.avg.load_avg);
-#endif
-
-#ifdef CONFIG_FAIR_GROUP_SCHED
-	p->se.cfs_rq			= NULL;
 #endif
 
 #ifdef CONFIG_SCHEDSTATS
@@ -2453,7 +2410,6 @@ void wake_up_new_task(struct task_struct *p)
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
 	/* Initialize new task's runnable average */
 	init_entity_runnable_average(&p->se);
-	init_rt_entity_runnable_average(&p->rt);
 #ifdef CONFIG_SCHED_HMP
 	trace_sched_task_runnable_ratio(p, p->se.avg.hmp_load_avg);
 #endif
@@ -2963,88 +2919,6 @@ void scheduler_tick(void)
 #endif
 	rq_last_tick_reset(rq);
 }
-
-#ifdef NR_CPUS
-static unsigned int heavy_cpu_count = NR_CPUS;
-#else
-static unsigned int heavy_cpu_count = 8;
-#endif
-
-static ssize_t heavy_task_cpu_show(struct device *dev,
-    struct device_attribute *attr, char *buf)
-{
-    int count = 0;
-    long unsigned int task_util;
-    long unsigned int cfs_load;
-    long unsigned int no_task;
-    long unsigned int remaining_load;
-    long unsigned int avg_load;
-    int cpu;
-
-    for_each_cpu(cpu, cpu_online_mask)
-    {
-        struct rq *rq = cpu_rq(cpu);
-        struct task_struct *p = rq->curr;
-        task_util = (long unsigned int)p->se.avg.util_avg;
-        cfs_load = (long unsigned int)rq->cfs.runnable_load_avg;
-        no_task = (long unsigned int)rq->cfs.h_nr_running;
-
-        if(task_util > HEAVY_TASK_LOAD_THRESHOLD)
-        {
-            count ++;
-        }
-        else if(task_util <= HEAVY_TASK_LOAD_THRESHOLD && no_task > 1)
-        {
-            remaining_load = cfs_load - task_util;
-            avg_load = remaining_load / (no_task-1);
-            if(avg_load > HEAVY_TASK_LOAD_THRESHOLD)
-                count++; 
-        }
-    }
-
-    heavy_cpu_count = count;
-
-    return snprintf(buf, 4, "%d\n", heavy_cpu_count);
-}
-
-static ssize_t heavy_task_cpu_store(struct device *dev,
-    struct device_attribute *attr, const char *buf, size_t size)
-{
-    sscanf(buf, "%d", &heavy_cpu_count);
-
-    return size;
-}
-
-static DEVICE_ATTR(heavy_task_cpu, 0664, heavy_task_cpu_show, heavy_task_cpu_store);
-
-static struct attribute *bench_mark_attributes[] = {
-    &dev_attr_heavy_task_cpu.attr,
-    NULL
-};
-
-static const struct attribute_group bench_mark_attr_group = {
-    .attrs = bench_mark_attributes,
-};
-
-int __init sched_heavy_cpu_init(void)
-{
-    int ret = 0;
-    struct device *dev;
-
-    dev = sec_device_create(NULL, "sec_heavy_cpu");
-
-    if (IS_ERR(dev)) {
-        dev_err(dev, "%s: fail to create sec_dev\n", __func__);
-        return PTR_ERR(dev);
-    }
-    ret = sysfs_create_group(&dev->kobj, &bench_mark_attr_group);
-    if (ret) {
-        dev_err(dev, "failed to create sysfs group\n");
-    }
-
-    return 0;
-}
-late_initcall(sched_heavy_cpu_init);
 
 #ifdef CONFIG_NO_HZ_FULL
 /**
@@ -3849,6 +3723,10 @@ extern struct cpumask hmp_slow_cpu_mask;
 static void __setscheduler(struct rq *rq, struct task_struct *p,
 			   const struct sched_attr *attr, bool keep_boost)
 {
+#ifdef CONFIG_SCHED_HMP
+	struct cpumask mask;
+#endif
+
 	__setscheduler_params(p, attr);
 
 	/*
@@ -3865,8 +3743,9 @@ static void __setscheduler(struct rq *rq, struct task_struct *p,
 	else if (rt_prio(p->prio)) {
 		p->sched_class = &rt_sched_class;
 #ifdef CONFIG_SCHED_HMP
-		if (cpumask_equal(&p->cpus_allowed, cpu_all_mask))
-			do_set_cpus_allowed(p, &hmp_slow_cpu_mask);
+		cpumask_andnot(&mask, &p->cpus_allowed, &hmp_fast_cpu_mask);
+		if (!cpumask_empty(&mask))
+			do_set_cpus_allowed(p, &mask);
 #endif
 	} else
 		p->sched_class = &fair_sched_class;
@@ -8000,7 +7879,7 @@ void sched_move_task(struct task_struct *tsk)
 	tg = autogroup_task_group(tsk, tg);
 	tsk->sched_task_group = tg;
 
-#if defined(CONFIG_FAIR_GROUP_SCHED) || defined(CONFIG_RT_GROUP_SCHED)
+#ifdef CONFIG_FAIR_GROUP_SCHED
 	if (tsk->sched_class->task_move_group)
 		tsk->sched_class->task_move_group(tsk);
 	else
@@ -8795,6 +8674,7 @@ struct cgroup_subsys cpu_cgrp_subsys = {
 	.fork		= cpu_cgroup_fork,
 	.can_attach	= cpu_cgroup_can_attach,
 	.attach		= cpu_cgroup_attach,
+	.allow_attach   = subsys_cgroup_allow_attach,
 	.legacy_cftypes	= cpu_files,
 	.early_init	= 1,
 };

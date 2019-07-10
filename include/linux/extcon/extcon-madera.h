@@ -8,8 +8,8 @@
  * published by the Free Software Foundation.
  */
 
-#ifndef EXTCON_MADERA_H
-#define EXTCON_MADERA_H
+#ifndef _EXTCON_MADERA_H_
+#define _EXTCON_MADERA_H_
 
 #include <linux/mfd/madera/registers.h>
 

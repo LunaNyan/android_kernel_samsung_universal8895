@@ -174,7 +174,7 @@ struct dw_mci {
 	/* For edmac */
 	struct dw_mci_dma_slave *dms;
 	/* Registers's physical base address */
-	resource_size_t		phy_regs;
+	void                    *phy_regs;
 
 	unsigned short          desc_sz;
 	struct pm_qos_request   pm_qos_int;
@@ -261,9 +261,6 @@ struct dw_mci {
 
 	struct timer_list       cmd11_timer;
 	struct timer_list       dto_timer;
-	
-	/* Card Clock In */
-	u32			cclk_in;
 };
 
 /* DMA ops for Internal/External DMAC interface */

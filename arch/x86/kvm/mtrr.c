@@ -539,7 +539,6 @@ static void mtrr_lookup_var_start(struct mtrr_iter *iter)
 
 	iter->fixed = false;
 	iter->start_max = iter->start;
-	iter->range = NULL;
 	iter->range = list_prepare_entry(iter->range, &mtrr_state->head, node);
 
 	__mtrr_lookup_var_next(iter);

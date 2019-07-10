@@ -109,7 +109,7 @@ static int fimc_is_hw_vra_ch0_handle_interrupt(u32 id, void *context)
 			fimc_is_hw_vra_save_debug_info(hw_ip, lib_vra, DEBUG_POINT_FRAME_END);
 #if !defined(VRA_DMA_TEST_BY_IMAGE)
 			fimc_is_hardware_frame_done(hw_ip, NULL, -1,
-				FIMC_IS_HW_CORE_END, IS_SHOT_SUCCESS, true);
+				FIMC_IS_HW_CORE_END, IS_SHOT_SUCCESS);
 #endif
 			wake_up(&hw_ip->status.wait_queue);
 		}
@@ -238,7 +238,7 @@ static int fimc_is_hw_vra_ch1_handle_interrupt(u32 id, void *context)
 				atomic_set(&hw_ip->status.Vvalid, V_BLANK);
 				fimc_is_hw_vra_save_debug_info(hw_ip, lib_vra, DEBUG_POINT_FRAME_END);
 				fimc_is_hardware_frame_done(hw_ip, NULL, -1,
-					FIMC_IS_HW_CORE_END, IS_SHOT_SUCCESS, true);
+					FIMC_IS_HW_CORE_END, IS_SHOT_SUCCESS);
 				wake_up(&hw_ip->status.wait_queue);
 
 				hw_ip->mframe = NULL;
@@ -404,7 +404,6 @@ int fimc_is_hw_vra_init(struct fimc_is_hw_ip *hw_ip,
 #endif
 
 		atomic_set(&hw_vra->ch1_count, 0);
-		spin_lock_init(&lib_vra->slock);
 	} else {
 		if (input_type != lib_vra->fr_work_init.dram_input) {
 			err_hw("[%d] input type is not matched - instance: %s, framework: %s",
@@ -483,7 +482,6 @@ int fimc_is_hw_vra_enable(struct fimc_is_hw_ip *hw_ip, u32 instance,
 
 	set_bit(HW_RUN, &hw_ip->state);
 	set_bit(HW_VRA_CH1_START, &hw_ip->state);
-	atomic_inc(&hw_ip->run_rsccount);
 
 	return ret;
 }
@@ -498,21 +496,6 @@ int fimc_is_hw_vra_disable(struct fimc_is_hw_ip *hw_ip, u32 instance,
 	BUG_ON(!hw_ip);
 
 	if (!test_bit_variables(hw_ip->id, &hw_map))
-		return 0;
-
-	hw_vra = (struct fimc_is_hw_vra *)hw_ip->priv_info;
-	if (unlikely(!hw_vra)) {
-		err_hw("[%d][ID:%d]priv_info is NULL", instance, hw_ip->id);
-		return -EINVAL;
-	}
-
-	ret = fimc_is_lib_vra_stop_instance(&hw_vra->lib_vra, instance);
-	if (ret) {
-		err_hw("[%d][ID:%d]lib_vra_stop_instance is fail (%d)", instance, hw_ip->id, ret);
-		return ret;
-	}
-
-	if (atomic_dec_return(&hw_ip->run_rsccount) > 0)
 		return 0;
 
 	info_hw("[%d][ID:%d]vra_disable: Vvalid(%d)\n", instance, hw_ip->id,
@@ -783,7 +766,7 @@ int fimc_is_hw_vra_frame_ndone(struct fimc_is_hw_ip *hw_ip,
 	output_id = FIMC_IS_HW_CORE_END;
 	if (test_bit_variables(hw_ip->id, &frame->core_flag))
 		ret = fimc_is_hardware_frame_done(hw_ip, frame, wq_id, output_id,
-				done_type, true);
+				done_type);
 
 	return ret;
 }

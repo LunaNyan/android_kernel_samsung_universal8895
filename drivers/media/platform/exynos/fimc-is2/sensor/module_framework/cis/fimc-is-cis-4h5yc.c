@@ -243,7 +243,6 @@ int sensor_4h5yc_cis_log_status(struct v4l2_subdev *subdev)
 		goto p_err;
 	}
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	pr_err("[SEN:DUMP] *******************************\n");
 	fimc_is_sensor_read16(client, 0x0000, &data16);
 	pr_err("[SEN:DUMP] model_id(%x)\n", data16);
@@ -255,7 +254,6 @@ int sensor_4h5yc_cis_log_status(struct v4l2_subdev *subdev)
 	pr_err("[SEN:DUMP] mode_select(%x)\n", data8);
 
 	sensor_cis_dump_registers(subdev, sensor_4h5yc_setfiles[0], sensor_4h5yc_setfile_sizes[0]);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 
 	pr_err("[SEN:DUMP] *******************************\n");
 
@@ -289,9 +287,7 @@ static int sensor_4h5yc_cis_group_param_hold_func(struct v4l2_subdev *subdev, un
 		goto p_err;
 	}
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write8(client, 0x0104, hold);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (ret < 0)
 		goto p_err;
 
@@ -435,7 +431,6 @@ int sensor_4h5yc_cis_set_size(struct v4l2_subdev *subdev, cis_shared_data *cis_d
 	}
 
 	/* 1. page_select */
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write16(client, 0x6028, 0x2000);
 	if (ret < 0)
 		 goto p_err;
@@ -527,7 +522,6 @@ int sensor_4h5yc_cis_set_size(struct v4l2_subdev *subdev, cis_shared_data *cis_d
 #endif
 
 p_err:
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	return ret;
 }
 
@@ -563,7 +557,6 @@ int sensor_4h5yc_cis_stream_on(struct v4l2_subdev *subdev)
 
 	sensor_4h5yc_cis_group_param_hold_func(subdev, 0x00);
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 #ifdef DEBUG_4H5YC_PLL
 	{
 	u16 pll;
@@ -593,7 +586,6 @@ int sensor_4h5yc_cis_stream_on(struct v4l2_subdev *subdev)
 
 	/* Sensor stream on */
 	fimc_is_sensor_write8(client, 0x0100, 0x01);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 
 	cis_data->stream_on = true;
 
@@ -639,9 +631,7 @@ int sensor_4h5yc_cis_stream_off(struct v4l2_subdev *subdev)
 	sensor_4h5yc_cis_group_param_hold_func(subdev, 0x00);
 
 	/* Sensor stream off */
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	fimc_is_sensor_write8(client, 0x0100, 0x00);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 
 	cis_data->stream_on = false;
 
@@ -737,7 +727,6 @@ int sensor_4h5yc_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_par
 		goto p_err;
 	}
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write16(client, 0x0200, (u16)(fine_int & 0xFFFF));
 	if (ret < 0)
 		goto p_err;
@@ -758,7 +747,6 @@ int sensor_4h5yc_cis_set_exposure_time(struct v4l2_subdev *subdev, struct ae_par
 #endif
 
 p_err:
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (hold > 0) {
 		hold = sensor_4h5yc_cis_group_param_hold_func(subdev, 0x00);
 		if (hold < 0)
@@ -981,9 +969,7 @@ int sensor_4h5yc_cis_set_frame_duration(struct v4l2_subdev *subdev, u32 frame_du
 		goto p_err;
 	}
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write16(client, 0x0340, frame_length_lines);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (ret < 0)
 		goto p_err;
 
@@ -1174,9 +1160,7 @@ int sensor_4h5yc_cis_set_analog_gain(struct v4l2_subdev *subdev, struct ae_param
 		goto p_err;
 	}
 
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write16(client, 0x0204, analog_gain);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (ret < 0)
 		goto p_err;
 
@@ -1415,9 +1399,7 @@ int sensor_4h5yc_cis_set_digital_gain(struct v4l2_subdev *subdev, struct ae_para
 
 	dgains[0] = dgains[1] = dgains[2] = dgains[3] = short_gain;
 	/* Short digital gain */
-	I2C_MUTEX_LOCK(cis->i2c_lock);
 	ret = fimc_is_sensor_write16_array(client, 0x020E, dgains, 4);
-	I2C_MUTEX_UNLOCK(cis->i2c_lock);
 	if (ret < 0)
 		goto p_err;
 
@@ -1748,10 +1730,9 @@ int cis_4h5yc_probe(struct i2c_client *client,
 
 	cis->id = SENSOR_NAME_S5K4H5YC;
 	cis->subdev = subdev_cis;
-	cis->device = sensor_id;
+	cis->device = 0;
 	cis->client = client;
 	sensor_peri->module->client = cis->client;
-        cis->i2c_lock = NULL;
 
 	cis->cis_data = kzalloc(sizeof(cis_shared_data), GFP_KERNEL);
 	if (!cis->cis_data) {

@@ -95,13 +95,7 @@ static atomic_t zswap_zero_pages = ATOMIC_INIT(0);
 
 /* Enable/disable zswap (disabled by default) */
 static bool zswap_enabled = 1;
-static int zswap_enabled_param_set(const char *,
-				   const struct kernel_param *);
-static struct kernel_param_ops zswap_enabled_param_ops = {
-	.set =		zswap_enabled_param_set,
-	.get =		param_get_bool,
-};
-module_param_cb(enabled, &zswap_enabled_param_ops, &zswap_enabled, 0644);
+module_param_named(enabled, zswap_enabled, bool, 0644);
 
 /* Crypto compressor to use */
 #define ZSWAP_COMPRESSOR_DEFAULT "lzo"
@@ -173,7 +167,6 @@ struct zswap_pool {
  * This structure contains the metadata for tracking a single compressed
  * page within zswap.
  *
- * #ifndef CONFIG_ZSWAP_SAME_PAGE_SHARING
  * rbnode - links the entry into red-black tree for the appropriate swap type
  * offset - the swap offset for the entry.  Index into the red-black tree.
  * refcount - the number of outstanding reference to the entry. This is needed
@@ -182,37 +175,31 @@ struct zswap_pool {
  *            for the zswap_tree structure that contains the entry must
  *            be held while changing the refcount.  Since the lock must
  *            be held, there is no reason to also make refcount atomic.
+ * pool - the zswap_pool the entry's data is in
+ * #ifdef CONFIG_ZSWAP_SAME_PAGE_SHARING
+ * zhandle - pointer to struct zswap_handle
+ * #else
  * length - the length in bytes of the compressed page data.  Needed during
  *          decompression
- * pool - the zswap_pool the entry's data is in
  * handle - zpool allocation handle that stores the compressed page data
+ * #endif
  * zero_flag - the flag indicating the page for the zswap_entry is a zero page.
  *            zswap does not store the page during compression.
  *            It memsets the page with 0 during decompression.
- * #else
- * zhandle - pointer to struct zswap_handle where length and handle are moved into.
- * #endif
  */
-#ifndef CONFIG_ZSWAP_SAME_PAGE_SHARING
-struct zswap_entry {
-	struct rb_node rbnode;
-	pgoff_t offset;
-	int refcount;
-	unsigned int length;
-	struct zswap_pool *pool;
-	unsigned long handle;
-	unsigned char zero_flag;
-};
-#else
 struct zswap_entry {
 	struct rb_node rbnode;
 	pgoff_t offset;
 	int refcount;
 	struct zswap_pool *pool;
+#ifdef CONFIG_ZSWAP_SAME_PAGE_SHARING
 	struct zswap_handle *zhandle;
+#else
+	unsigned int length;
+	unsigned long handle;
+#endif
 	unsigned char zero_flag;
 };
-#endif
 
 #ifdef CONFIG_ZSWAP_ENABLE_WRITEBACK
 struct zswap_header {
@@ -245,9 +232,6 @@ static atomic_t zswap_pools_count = ATOMIC_INIT(0);
 
 /* used by param callback function */
 static bool zswap_init_started;
-
-/* fatal error during init */
-static bool zswap_init_failed;
 
 /*********************************
 * helpers and fwd declarations
@@ -940,11 +924,6 @@ static int __zswap_param_set(const char *val, const struct kernel_param *kp,
 	char *s = strstrip((char *)val);
 	int ret;
 
-	if (zswap_init_failed) {
-		pr_err("can't set param, initialization failed\n");
-		return -ENODEV;
-	}
-
 	/* no change required */
 	if (!strcmp(s, *(char **)kp->arg))
 		return 0;
@@ -1022,17 +1001,6 @@ static int zswap_zpool_param_set(const char *val,
 				 const struct kernel_param *kp)
 {
 	return __zswap_param_set(val, kp, NULL, zswap_compressor);
-}
-
-static int zswap_enabled_param_set(const char *val,
-				   const struct kernel_param *kp)
-{
-	if (zswap_init_failed) {
-		pr_err("can't enable, initialization failed\n");
-		return -ENODEV;
-	}
-
-	return param_set_bool(val, kp);
 }
 
 /*********************************
@@ -1780,9 +1748,6 @@ handlecachefail:
 #endif
 	zswap_entry_cache_destroy();
 cache_fail:
-	/* if built-in, we aren't unloaded on failure; don't allow use */
-	zswap_init_failed = true;
-	zswap_enabled = false;
 	return -ENOMEM;
 }
 /* must be late so crypto has time to come up */

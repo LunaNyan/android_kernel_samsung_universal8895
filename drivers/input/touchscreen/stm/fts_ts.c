@@ -907,11 +907,16 @@ int fts_systemreset(struct fts_ts_info *info, unsigned int delay)
 	fts_delay(delay);
 	rc = fts_wait_for_ready(info);
 
+#ifndef CONFIG_SEC_FACTORY
+	if (info->lowpower_flag) 
+#endif 
+	{
 #ifdef FTS_SUPPORT_STRINGLIB
-	ret = info->fts_write_to_string(info, &addr, &info->lowpower_flag, sizeof(info->lowpower_flag));
-	if (ret < 0)
-		input_err(true, &info->client->dev, "%s: failed. ret: %d\n", __func__, ret);
+		ret = info->fts_write_to_string(info, &addr, &info->lowpower_flag, sizeof(info->lowpower_flag));
+		if (ret < 0)
+			input_err(true, &info->client->dev, "%s: failed. ret: %d\n", __func__, ret);
 #endif
+	}
 	/* do not consider about sponge read/write fail after syste reset routine. */
 	return rc;
 
@@ -1397,14 +1402,10 @@ static int fts_init(struct fts_ts_info *info)
 
 	info->deepsleep_mode = false;
 	info->wirelesscharger_mode = false;
-
-	if (info->board->support_pressure) {
+	if (info->board->use_pressure)
 		info->lowpower_flag |= FTS_MODE_PRESSURE;
-		info->pressure_caller_id = -1;
-	} else {
+	else
 		info->lowpower_flag = 0x00;
-		info->pressure_caller_id = 0;
-	}
 	info->external_factory = false;
 
 #ifdef FTS_SUPPORT_TOUCH_KEY
@@ -1468,7 +1469,6 @@ static unsigned char fts_event_handler_type_b(struct fts_ts_info *info,
 	int x = 0, y = 0, z = 0;
 	int bw = 0, bh = 0, palm = 0;
 	int custom = 0;
-	unsigned char force_strength = 1;
 #ifdef FTS_SUPPORT_STRINGLIB
 	unsigned short string_addr;
 	unsigned char string_event_id;
@@ -1732,32 +1732,6 @@ static unsigned char fts_event_handler_type_b(struct fts_ts_info *info,
 			palm = (data[6 + EventNum * FTS_EVENT_SIZE] >> 7) & 0x01;
 			z = data[7 + EventNum * FTS_EVENT_SIZE];
 
-#ifdef FTS_SUPPORT_STRINGLIB
-			if (info->pressure_setting_mode) {
-				unsigned short addr;
-				unsigned char data[2] = { 0 };
-				short temp;
-				int ret;
-
-				addr = FTS_CMD_STRING_ACCESS + FTS_CMD_OFFSET_PRESSURE_DATA;
-				data[0] = data[1] = 0;
-
-				ret = info->fts_read_from_string(info, &addr, data, sizeof(data));
-				if (ret < 0)
-					input_err(true, &info->client->dev, "%s: i2c read sponge event failed\n", __func__);
-
-				temp = (data[1] << 8 | data[0]);
-				if (temp < 0)
-					force_strength = 0;
-				else if (temp > 255)
-					force_strength = 255;
-				else
-					force_strength = temp;
-
-				input_dbg(true, &info->client->dev, "%s: force_strength: %d\n", __func__, force_strength);
-			}
-#endif
-
 			input_report_key(info->input_dev, BTN_TOUCH, 1);
 			input_mt_slot(info->input_dev, TouchID);
 			input_mt_report_slot_state(info->input_dev,
@@ -1774,9 +1748,9 @@ static unsigned char fts_event_handler_type_b(struct fts_ts_info *info,
 					 ABS_MT_TOUCH_MINOR, min(bw, bh));
 
 			if (info->brush_mode)
-				custom = (force_strength << 8) | ((z & 0xFF) << 1) | palm;
+				custom = ((z & 0xFF) << 1) | palm;
 			else
-				custom = (force_strength << 8) | (BRUSH_Z_DATA << 1) | palm;
+				custom = (BRUSH_Z_DATA << 1) | palm;
 
 			input_report_abs(info->input_dev, ABS_MT_CUSTOM, custom);
 
@@ -1923,23 +1897,6 @@ static unsigned char fts_event_handler_type_b(struct fts_ts_info *info,
 #endif
 				info->all_aod_tap_count++;
 				break;
-			case FTS_STRING_EVENT_SINGLETAP:
-				string_addr = FTS_CMD_STRING_ACCESS + 10;
-				fts_read_from_string(info, &string_addr, string_data, sizeof(string_data));
-
-				input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
-				info->scrub_id = SPECIAL_EVENT_TYPE_SINGLETAP;
-				info->scrub_x = (string_data[1] & 0xFF) << 8 | (string_data[0] & 0xFF);
-				info->scrub_y = (string_data[3] & 0xFF) << 8 | (string_data[2] & 0xFF);
-
-#ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
-				input_info(true, &info->client->dev, "%s: SINGLE_TAP[%d]\n", __func__, info->scrub_id);
-#else
-				input_info(true, &info->client->dev, "%s: SINGLE_TAP[%d %d %d]\n", __func__,
-						info->scrub_id, info->scrub_x, info->scrub_y);
-#endif
-				info->all_aod_tap_count++;
-				break;
 			case FTS_STRING_EVENT_SPAY:
 				input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
 				info->scrub_id = SPECIAL_EVENT_TYPE_SPAY;
@@ -2021,10 +1978,8 @@ static unsigned char fts_event_handler_type_b(struct fts_ts_info *info,
 			case FTS_STRING_EVENT_AOD_TRIGGER:
 				input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
 				info->scrub_id = SPECIAL_EVENT_TYPE_AOD_DOUBLETAB;
-				info->scrub_x = (data[EventNum * FTS_EVENT_SIZE + 4] & 0xF0) << 4 |
-						(data[EventNum * FTS_EVENT_SIZE + 3] & 0xFF);
-				info->scrub_y = (data[EventNum * FTS_EVENT_SIZE + 4] & 0x0F) << 8 |
-						(data[EventNum * FTS_EVENT_SIZE + 2] & 0xFF);
+				info->scrub_x = (data[4] & 0xF0) << 4 | (data[3] & 0xFF);
+				info->scrub_y = (data[4] & 0x0F) << 8 | (data[2] & 0xFF);
 
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
 				input_info(true, &info->client->dev, "%s: AOD[%d]\n", __func__, info->scrub_id);
@@ -2056,10 +2011,7 @@ static unsigned char fts_event_handler_type_b(struct fts_ts_info *info,
 						}
 					}
 
-					if (info->pressure_setting_mode)
-						input_info(true, &info->client->dev, "%s: skip force events in pressure setting mode\n", __func__);
-					else
-						input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
+					input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
 				} else {
 					if (event_type & FTS_STRING_EVENT_PRESSURE_RELEASED) {
 						input_report_key(info->input_dev, KEY_HOMEPAGE, 0);
@@ -2078,10 +2030,8 @@ static unsigned char fts_event_handler_type_b(struct fts_ts_info *info,
 					}
 				}
 
-				info->scrub_x = (data[EventNum * FTS_EVENT_SIZE + 4] & 0xF0) << 4 |
-						(data[EventNum * FTS_EVENT_SIZE + 3] & 0xFF);
-				info->scrub_y = (data[EventNum * FTS_EVENT_SIZE + 4] & 0x0F) << 8 |
-						(data[EventNum * FTS_EVENT_SIZE + 2] & 0xFF);
+				info->scrub_x = (data[4] & 0xF0) << 4 | (data[3] & 0xFF);
+				info->scrub_y = (data[4] & 0x0F) << 8 | (data[2] & 0xFF);
 
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
 				input_info(true, &info->client->dev, "%s: PRESSURE[%d]\n", __func__, info->scrub_id);
@@ -2138,21 +2088,19 @@ static unsigned char fts_event_handler_type_b(struct fts_ts_info *info,
 		else if (EventID == EVENTID_LEAVE_POINTER) {
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 			input_info(true, &info->client->dev,
-				"%s[R] tID:%d mc:%d tc:%d lx:%d ly:%d f:%d lp:(%x/%d) Ver[%02X%04X|%01X] P%02XT%04X[%02X] F%02X%02X C%02X\n",
+				"%s[R] tID:%d mc:%d tc:%d lx:%d ly:%d f:%d Ver[%02X%04X|%01X] P%02XT%04X[%02X] F%02X%02X C%02X\n",
 				info->dex_name, TouchID, info->finger[TouchID].mcount,
 				info->touch_count, info->finger[TouchID].lx,
 				info->finger[TouchID].ly, info->pressure_max,
-				info->lowpower_flag, info->pressure_caller_id,
 				info->panel_revision, info->fw_main_version_of_ic,
 				info->flip_enable, info->cal_count, info->tune_fix_ver,
 				info->test_result.data[0], info->pressure_cal_base,
 				info->pressure_cal_delta, info->nv_crc_fail_count);
 #else
 			input_info(true, &info->client->dev,
-				"%s[R] tID:%d mc:%d tc:%d f:%d lp:(%x/%d) Ver[%02X%04X|%01X] P%02XT%04X[%02X] F%02X%02X, C%02X\n",
+				"%s[R] tID:%d mc:%d tc:%d f:%d Ver[%02X%04X|%01X] P%02XT%04X[%02X] F%02X%02X, C%02X\n",
 				info->dex_name, TouchID, info->finger[TouchID].mcount,
 				info->touch_count, info->pressure_max,
-				info->lowpower_flag, info->pressure_caller_id,
 				info->panel_revision, info->fw_main_version_of_ic,
 				info->flip_enable, info->cal_count, info->tune_fix_ver,
 				info->test_result.data[0], info->pressure_cal_base,
@@ -2544,11 +2492,8 @@ static int fts_parse_dt(struct i2c_client *client)
 
 	of_property_read_u32(np, "stm,bringup", &pdata->bringup);
 
-	if (of_property_read_u32(np, "stm,always_lpmode", &pdata->always_lpmode) < 0)
-		pdata->always_lpmode = 0;
-
-	if (of_property_read_string(np, "pressure-sensor", &pdata->support_pressure) < 0)
-		input_err(true, dev, "%s: Failed to get pressure-sensor property\n", __func__);
+	if (of_property_read_u32(np, "stm,use_pressure", &pdata->use_pressure) < 0)
+		pdata->use_pressure = 0;
 
 	pdata->support_hover = false;
 	pdata->support_glove = false;
@@ -2621,10 +2566,10 @@ static int fts_parse_dt(struct i2c_client *client)
 	pdata->panel_revision = ((lcdtype >> 8) & 0xFF) >> 4;
 
 	input_err(true, dev,
-		"%s: irq :%d, irq_type: 0x%04x, max[x,y]: [%d,%d], project/model_name: %s/%s, pat_function(%d), panel_revision: %d, gesture: %d, device_num: %d, dex: %d pressure:%s\n",
+		"%s: irq :%d, irq_type: 0x%04x, max[x,y]: [%d,%d], project/model_name: %s/%s, pat_function(%d), panel_revision: %d, gesture: %d, device_num: %d, dex: %d\n",
 		__func__, pdata->irq_gpio, pdata->irq_type, pdata->max_x, pdata->max_y,
 		pdata->project_name, pdata->model_name, pdata->pat_function, pdata->panel_revision,
-		pdata->support_sidegesture, pdata->device_num, pdata->support_dex, pdata->support_pressure);
+		pdata->support_sidegesture, pdata->device_num, pdata->support_dex);
 
 	return retval;
 }
@@ -2763,7 +2708,6 @@ static void fts_set_input_prop(struct fts_ts_info *info, struct input_dev *dev, 
 	set_bit(BTN_TOOL_FINGER, dev->keybit);
 	set_bit(KEY_BLACK_UI_GESTURE, dev->keybit);
 	set_bit(KEY_HOMEPAGE, dev->keybit);
-	set_bit(KEY_INT_CANCEL, dev->keybit);
 
 #ifdef FTS_SUPPORT_TOUCH_KEY
 	if (info->board->support_mskey) {
@@ -2796,7 +2740,7 @@ static void fts_set_input_prop(struct fts_ts_info *info, struct input_dev *dev, 
 				 0, 255, 0, 0);
 	input_set_abs_params(dev, ABS_MT_TOUCH_MINOR,
 				 0, 255, 0, 0);
-	input_set_abs_params(dev, ABS_MT_CUSTOM, 0, 0xFFFFFFFF, 0, 0);
+	input_set_abs_params(dev, ABS_MT_CUSTOM, 0, 0xFFFF, 0, 0);
 
 	if (info->board->support_hover)
 		input_set_abs_params(dev, ABS_MT_DISTANCE, 0, 255, 0, 0);
@@ -3253,26 +3197,10 @@ static void fts_input_close(struct input_dev *dev)
 #endif
 	cancel_delayed_work(&info->reset_work);
 
-	if (info->prox_power_off) {
-		input_report_key(info->input_dev, KEY_INT_CANCEL, 1);
-		input_sync(info->input_dev);
-		input_report_key(info->input_dev, KEY_INT_CANCEL, 0);
-		input_sync(info->input_dev);
-	}
-
 #ifndef CONFIG_SEC_FACTORY
-	if (info->board->always_lpmode && info->board->support_pressure)
-		info->lowpower_flag |= FTS_MODE_PRESSURE;
+	info->lowpower_flag |= FTS_MODE_PRESSURE;
 #endif
-
-	info->pressure_setting_mode = 0;
-
-	if (info->prox_power_off)
-		fts_stop_device(info, false);
-	else
-		fts_stop_device(info, info->lowpower_flag);
-
-	info->prox_power_off = 0;
+	fts_stop_device(info, info->lowpower_flag);
 
 #ifdef FTS_SUPPORT_HOVER
 	info->retry_hover_enable_after_wakeup = 0;
@@ -3502,9 +3430,6 @@ static void fts_reset(struct fts_ts_info *info, unsigned int ms)
 		info->board->power(info, true);
 
 	fts_delay(5);
-
-	fts_set_warmboot_crc_enable(info);
-
 }
 
 static void fts_reset_work(struct work_struct *work)
@@ -3585,7 +3510,7 @@ static void fts_read_info_work(struct work_struct *work)
 		input_err(true, &info->client->dev, "%s: failed to get result\n",
 			__func__);
 
-	input_raw_info(true, &info->client->dev, "%s: test result:%02X, cal: %02X, fix ver:%04X\n",
+	input_info(true, &info->client->dev, "%s: test result:%02X, cal: %02X, fix ver:%04X\n",
 		__func__, info->test_result.data[0], info->cal_count, info->tune_fix_ver);
 
 	ret = get_nvm_data(info, GROUP_INDEX, &index);
@@ -3610,17 +3535,17 @@ static void fts_read_info_work(struct work_struct *work)
 		info->pressure_center = (short)(data[(index - 1) * 8 + 2] | ((data[(index - 1) * 8 + 3] << 8) & 0xFF00));
 		info->pressure_right = (short)(data[(index - 1) * 8 + 4] | ((data[(index - 1) * 8 + 5] << 8) & 0xFF00));
 
-		input_raw_info(true, &info->client->dev, "%s: [pressure][index:%d]: %d, %d, %d\n",
+		input_info(true, &info->client->dev, "%s: [pressure][index:%d]: %d, %d, %d\n",
 			__func__, index, info->pressure_left, info->pressure_center, info->pressure_right);
 	} else if (index == 0) {
-		input_raw_info(true, &info->client->dev, "%s: [pressure] do not calibrated\n", __func__);
+		input_info(true, &info->client->dev, "%s: [pressure] do not calibrated\n", __func__);
 	} else {
-		input_raw_info(true, &info->client->dev, "%s: [pressure]: invalid index: %d\n",
+		input_info(true, &info->client->dev, "%s: [pressure]: invalid index: %d\n",
 			__func__, index);
 	}
 	fts_panel_ito_test(info);
 
-	input_raw_info(true, &info->client->dev, "%s: [ito] %02X, %02X, %02X, %02X\n",
+	input_info(true, &info->client->dev, "%s: [ito] %02X, %02X, %02X, %02X\n",
 		__func__, info->ito_test[0], info->ito_test[1], info->ito_test[2], info->ito_test[3]);
 
 	fts_read_frame(info, TYPE_BASELINE_DATA, &minval, &maxval);
@@ -3679,6 +3604,9 @@ static int fts_stop_device(struct fts_ts_info *info, bool lpmode)
 		info->fts_power_state = FTS_POWER_STATE_LOWPOWER;
 
 #ifdef FTS_SUPPORT_STRINGLIB
+#ifndef CONFIG_SEC_FACTORY
+		if (info->lowpower_flag)
+#endif
 		{
 			unsigned short addr = FTS_CMD_STRING_ACCESS;
 			int ret;
@@ -3756,11 +3684,6 @@ static int fts_start_device(struct fts_ts_info *info)
 			fts_interrupt_set(info, INT_ENABLE);
 		}
 
-		if (info->force_release) {
-			haptic_homekey_release();
-			info->force_release = false;
-		}
-
 		if (device_may_wakeup(&info->client->dev))
 			disable_irq_wake(info->irq);
 	}
@@ -3768,6 +3691,9 @@ static int fts_start_device(struct fts_ts_info *info)
 	enable_irq(info->irq);
 
 #ifdef FTS_SUPPORT_STRINGLIB
+#ifndef CONFIG_SEC_FACTORY
+	if (info->lowpower_flag)
+#endif
 	{
 		unsigned short addr = FTS_CMD_STRING_ACCESS;
 		int ret;
@@ -3812,33 +3738,7 @@ static int fts_pm_suspend(struct device *dev)
 {
 	struct fts_ts_info *info = dev_get_drvdata(dev);
 
-	input_dbg(false, &info->client->dev, "%s\n", __func__);
-
-#ifdef USE_OPEN_CLOSE
-	if (info->input_dev) {
-		int retval = mutex_lock_interruptible(&info->input_dev->mutex);
-
-		if (retval) {
-			input_err(true, &info->client->dev,
-					"%s : mutex error\n", __func__);
-			goto out;
-		}
-
-		if (!info->input_dev->disabled) {
-			info->input_dev->disabled = true;
-			if (info->input_dev->users && info->input_dev->close) {
-				input_err(true, &info->client->dev,
-						"%s called without input_close\n",
-						__func__);
-				info->input_dev->close(info->input_dev);
-			}
-			info->input_dev->users = 0;
-		}
-
-		mutex_unlock(&info->input_dev->mutex);
-	}
-out:
-#endif
+	input_dbg(true, &info->client->dev, "%s\n", __func__);
 
 	if (info->fts_power_state > FTS_POWER_STATE_POWERDOWN)
 		reinit_completion(&info->resume_done);
@@ -3850,7 +3750,7 @@ static int fts_pm_resume(struct device *dev)
 {
 	struct fts_ts_info *info = dev_get_drvdata(dev);
 
-	input_dbg(false, &info->client->dev, "%s\n", __func__);
+	input_dbg(true, &info->client->dev, "%s\n", __func__);
 
 	if (info->fts_power_state > FTS_POWER_STATE_POWERDOWN)
 		complete_all(&info->resume_done);

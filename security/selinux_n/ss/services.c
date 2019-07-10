@@ -775,9 +775,7 @@ out:
 
 // [ SEC_SELINUX_PORTING_COMMON
 #ifdef CONFIG_ALWAYS_ENFORCE
-#if !defined(CONFIG_RKP_KDP)
 	selinux_enforcing = 1;
-#endif
 #endif
 // ] SEC_SELINUX_PORTING_COMMON
 	if (!selinux_enforcing)
@@ -1447,7 +1445,7 @@ static int security_context_to_sid_core(const char *scontext, u32 scontext_len,
 				      scontext_len, &context, def_sid);
 	if (rc == -EINVAL && force) {
 		context.str = str;
-		context.len = strlen(str) + 1;
+		context.len = scontext_len;
 		str = NULL;
 	} else if (rc)
 		goto out_unlock;
@@ -1545,9 +1543,7 @@ out:
 
 // [ SEC_SELINUX_PORTING_COMMON
 #ifdef CONFIG_ALWAYS_ENFORCE
-#if !defined(CONFIG_RKP_KDP)
 	selinux_enforcing = 1;
-#endif
 #endif
 // ] SEC_SELINUX_PORTING_COMMON
 	if (!selinux_enforcing)
@@ -1843,9 +1839,7 @@ static inline int convert_context_handle_invalid_context(struct context *context
 
 // [ SEC_SELINUX_PORTING_COMMON
 #ifdef CONFIG_ALWAYS_ENFORCE
-#if !defined(CONFIG_RKP_KDP)
 	selinux_enforcing = 1;
-#endif
 #endif
 // ] SEC_SELINUX_PORTING_COMMON
 	if (selinux_enforcing)
@@ -2510,10 +2504,8 @@ static inline int __security_genfs_sid(const char *fstype,
 	}
 
 	rc = -ENOENT;
-	if (!genfs || cmp){
-		printk(KERN_ERR "SELinux: %s: genfs || cmp\n", __func__);
+	if (!genfs || cmp)
 		goto out;
-	}
 
 	for (c = genfs->head; c; c = c->next) {
 		len = strlen(c->u.name);
@@ -2523,17 +2515,13 @@ static inline int __security_genfs_sid(const char *fstype,
 	}
 
 	rc = -ENOENT;
-	if (!c)	{
-		printk(KERN_ERR "SELinux: %s empty ocontext c \n", __func__);
+	if (!c)
 		goto out;
-	}
 
 	if (!c->sid[0]) {
 		rc = sidtab_context_to_sid(&sidtab, &c->context[0], &c->sid[0]);
-		if (rc)	{
-			printk(KERN_ERR "SELinux: %s: sid\n", __func__);
+		if (rc)
 			goto out;
-		}
 	}
 
 	*sid = c->sid[0];
@@ -2573,10 +2561,6 @@ int security_fs_use(struct super_block *sb)
 {
 	int rc = 0;
 	struct ocontext *c;
-// [ SEC_SELINUX_PORTING_COMMON
-	u32 tmpsid;
-// ] SEC_SELINUX_PORTING_COMMON
-
 	struct superblock_security_struct *sbsec = sb->s_security;
 	const char *fstype = sb->s_type->name;
 
@@ -2592,21 +2576,15 @@ int security_fs_use(struct super_block *sb)
 	if (c) {
 		sbsec->behavior = c->v.behavior;
 		if (!c->sid[0]) {
-// [ SEC_SELINUX_PORTING_COMMON
 			rc = sidtab_context_to_sid(&sidtab, &c->context[0],
-						   &tmpsid);
-			c->sid[0] = tmpsid;
-// ] SEC_SELINUX_PORTING_COMMON
+						   &c->sid[0]);
 			if (rc)
 				goto out;
 		}
 		sbsec->sid = c->sid[0];
 	} else {
-// [ SEC_SELINUX_PORTING_COMMON
 		rc = __security_genfs_sid(fstype, "/", SECCLASS_DIR,
-					  &tmpsid);
-		sbsec->sid = tmpsid;
-// ] SEC_SELINUX_PORTING_COMMON
+					  &sbsec->sid);
 		if (rc) {
 			sbsec->behavior = SECURITY_FS_USE_NONE;
 			rc = 0;

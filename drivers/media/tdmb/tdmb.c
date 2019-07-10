@@ -316,11 +316,7 @@ static void tdmb_make_ring_buffer(void)
 	if (size % PAGE_SIZE) /* klaatu hard coding */
 		size = size + size % PAGE_SIZE;
 
-	ts_ring = kzalloc(size, GFP_KERNEL);
-	if (!ts_ring) {
-		DPRINTK("RING Buff Create Fail\n");
-		return;
-	}
+	ts_ring = kmalloc(size, GFP_KERNEL);
 	DPRINTK("RING Buff Create OK\n");
 }
 
@@ -335,10 +331,6 @@ static int tdmb_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	vma->vm_flags |= VM_RESERVED;
 	size = vma->vm_end - vma->vm_start;
-	if (size > TDMB_RING_BUFFER_MAPPING_SIZE) {
-		DPRINTK("over size given : %lx\n", size);
-		return -EAGAIN;
-	}
 	DPRINTK("size given : %lx\n", size);
 
 #if TDMB_PRE_MALLOC
@@ -350,11 +342,7 @@ static int tdmb_mmap(struct file *filp, struct vm_area_struct *vma)
 		if (size % PAGE_SIZE) /* klaatu hard coding */
 			size = size + size % PAGE_SIZE;
 
-		ts_ring = kzalloc(size, GFP_KERNEL);
-		if (!ts_ring) {
-			DPRINTK("RING Buff ReAlloc Fail\n");
-			return -ENOMEM;
-		}
+		ts_ring = kmalloc(size, GFP_KERNEL);
 #if TDMB_PRE_MALLOC
 	}
 #endif
@@ -363,6 +351,8 @@ static int tdmb_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	if (remap_pfn_range(vma, vma->vm_start, pfn, size, vma->vm_page_prot))
 		return -EAGAIN;
+
+	DPRINTK("succeeded\n");
 
 	tdmb_ts_head = (unsigned int *)ts_ring;
 	tdmb_ts_tail = (unsigned int *)(ts_ring + 4);
@@ -375,6 +365,10 @@ static int tdmb_mmap(struct file *filp, struct vm_area_struct *vma)
 	tdmb_ts_size
 	= ((tdmb_ts_size / DMB_TS_SIZE) * DMB_TS_SIZE) - (30 * DMB_TS_SIZE);
 
+	DPRINTK("head : %p, tail : %p, buffer : %p, size : %x\n",
+			tdmb_ts_head, tdmb_ts_tail,
+			tdmb_ts_buffer, tdmb_ts_size);
+
 	cmd_buffer = tdmb_ts_buffer + tdmb_ts_size + 8;
 	cmd_head = (unsigned int *)(cmd_buffer - 8);
 	cmd_tail = (unsigned int *)(cmd_buffer - 4);
@@ -384,7 +378,9 @@ static int tdmb_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	cmd_size = 30 * DMB_TS_SIZE - 8; /* klaatu hard coding */
 
-	DPRINTK("succeeded\n");
+	DPRINTK("cmd head : %p, tail : %p, buffer : %p, size : %x\n",
+			cmd_head, cmd_tail,
+			cmd_buffer, cmd_size);
 
 	return 0;
 }
@@ -423,7 +419,7 @@ static int _tdmb_cmd_update(
 		return false;
 	}
 
-	DPRINTK("head %d tail %d\n", head, tail);
+	DPRINTK("%p head %d tail %d\n", cmd_buffer, head, tail);
 
 	if (head+data_size_tmp <= size) {
 		memcpy((cmd_buffer + head),
@@ -580,7 +576,6 @@ static long tdmb_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case IOCTL_TDMB_SCAN_FREQ_ASYNC:
-#if 0
 		mutex_lock(&tdmb_lock);
 		if (!tdmb_pwr_on) {
 			DPRINTK("IOCTL_TDMB_SCAN_FREQ_ASYNC-Not ready\n");
@@ -607,8 +602,6 @@ static long tdmb_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		vfree(ensemble_info);
 		tdmb_last_ch = 0;
 		mutex_unlock(&tdmb_lock);
-#endif
-		DPRINTK("IOCTL_TDMB_SCAN_FREQ_ASYNC - blocked\n");
 		break;
 
 	case IOCTL_TDMB_SCAN_FREQ_SYNC:
@@ -619,11 +612,6 @@ static long tdmb_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			break;
 		}
 		ensemble_info = vmalloc(sizeof(struct ensemble_info_type));
-		if (ensemble_info == NULL) {
-			DPRINTK("IOCTL_TDMB_SCAN_FREQ_SYNC-vmalloc fail\n");
-			mutex_unlock(&tdmb_lock);
-			break;
-		}
 		if(copy_from_user(ensemble_info, (void *)arg, sizeof(struct ensemble_info_type)))
 			DPRINTK("cmd(%x):copy_from_user failed\n", cmd);
 		else

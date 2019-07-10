@@ -17,7 +17,6 @@
 #include <linux/input.h>
 #endif
 #include <linux/sec_ext.h>
-#include <linux/sec_debug.h>
 #include "../../battery_v2/include/sec_battery.h"
 #include <linux/sec_batt.h>
 
@@ -26,13 +25,6 @@
 
 #include <soc/samsung/exynos-pmu.h>
 #include <soc/samsung/acpm_ipc_ctrl.h>
-#if defined(CONFIG_SEC_ABC)
-#include <linux/sti/abc_common.h>
-#endif
-
-#ifdef CONFIG_SEC_DEBUG
-#include <linux/sec_debug.h>
-#endif
 
 /* function ptr for original arm_pm_restart */
 void (*mach_restart)(enum reboot_mode mode, const char *cmd);
@@ -57,16 +49,12 @@ enum sec_reset_reason {
 	SEC_RESET_REASON_SECURE    = (SEC_RESET_REASON_PREFIX | 0x7), /* image secure check fail */
 	SEC_RESET_REASON_FWUP      = (SEC_RESET_REASON_PREFIX | 0x9), /* emergency firmware update */
 	SEC_RESET_REASON_EM_FUSE   = (SEC_RESET_REASON_PREFIX | 0xa), /* EMC market fuse */
-	SEC_RESET_REASON_BOOTLOADER   = (SEC_RESET_REASON_PREFIX | 0xd),
 	SEC_RESET_REASON_EMERGENCY = 0x0,
 
 	SEC_RESET_SET_DEBUG        = (SEC_RESET_SET_PREFIX | 0xd0000),
 	SEC_RESET_SET_SWSEL        = (SEC_RESET_SET_PREFIX | 0xe0000),
 	SEC_RESET_SET_SUD          = (SEC_RESET_SET_PREFIX | 0xf0000),
 	SEC_RESET_CP_DBGMEM        = (SEC_RESET_SET_PREFIX | 0x50000), /* cpmem_on: CP RAM logging */
-#if defined(CONFIG_SEC_ABC)
-	SEC_RESET_USER_DRAM_TEST   = (SEC_RESET_SET_PREFIX | 0x60000), /* USER DRAM TEST */
-#endif
 };
 
 static void sec_power_off(void)
@@ -119,9 +107,6 @@ static void sec_power_off(void)
 		if ((ac_val.intval || water_val.intval || usb_val.intval || wpc_val.intval || (poweroff_try >= 5))) {
 #endif
 			pr_emerg("%s: charger connected or power off failed(%d), reboot!\n", __func__, poweroff_try);
-#ifdef CONFIG_SEC_DEBUG
-			sec_debug_reboot_handler();
-#endif
 			/* To enter LP charging */
 			exynos_pmu_write(EXYNOS_PMU_INFORM2, SEC_POWER_OFF);
 
@@ -137,12 +122,6 @@ static void sec_power_off(void)
 		if (gpio_get_value(powerkey_gpio)) {
 			exynos_acpm_reboot();
 
-#ifdef CONFIG_SEC_DEBUG
-			/* Clear magic code in power off */
-			pr_emerg("%s: Clear magic code in power off!\n", __func__);
-			sec_debug_reboot_handler();
-			flush_cache_all();
-#endif
 			pr_emerg("%s: set PS_HOLD low\n", __func__);
 			exynos_pmu_update(EXYNOS_PMU_PS_HOLD_CONTROL, 0x1<<8, 0x0);
 
@@ -177,8 +156,6 @@ static void sec_reboot(enum reboot_mode reboot_mode, const char *cmd)
 			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_RECOVERY);
 		else if (!strcmp(cmd, "download"))
 			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_DOWNLOAD);
-		else if (!strcmp(cmd, "bootloader"))
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_BOOTLOADER);
 		else if (!strcmp(cmd, "upload"))
 			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_UPLOAD);
 		else if (!strcmp(cmd, "secure"))
@@ -187,21 +164,10 @@ static void sec_reboot(enum reboot_mode reboot_mode, const char *cmd)
 			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_FWUP);
 		else if (!strcmp(cmd, "em_mode_force_user"))
 			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_EM_FUSE);
-#if defined(CONFIG_SEC_ABC)
-		else if (!strcmp(cmd, "user_dram_test") && sec_abc_get_enabled())
-			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_USER_DRAM_TEST);
-#endif
 		else if (!strncmp(cmd, "emergency", 9))
 			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_REASON_EMERGENCY);
-		else if (!strncmp(cmd, "debug", 5) && !kstrtoul(cmd + 5, 0, &value)) {
+		else if (!strncmp(cmd, "debug", 5) && !kstrtoul(cmd + 5, 0, &value))
 			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_SET_DEBUG | value);
-#ifdef CONFIG_SEC_DEBUG
-			if ((value == 0x494d) || (value == 0x4948) || (value == 0x5541))
-				sec_debug_set_debug_level(1);
-			else if (value == 0x4f4c)
-				sec_debug_set_debug_level(0);
-#endif
-		}
 		else if (!strncmp(cmd, "swsel", 5) && !kstrtoul(cmd + 5, 0, &value))
 			exynos_pmu_write(EXYNOS_PMU_INFORM3, SEC_RESET_SET_SWSEL | value);
 		else if (!strncmp(cmd, "sud", 3) && !kstrtoul(cmd + 3, 0, &value))

@@ -3,7 +3,7 @@
  * ALSA SoC - Samsung Abox utility
  *
  * Copyright (c) 2016 Samsung Electronics Co. Ltd.
- *
+  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
@@ -21,9 +21,8 @@
  * @param[out]	size		size of the resource
  * @return	virtual address
  */
-extern void __iomem *devm_not_request_and_map(struct platform_device *pdev,
-		const char *name, unsigned int num,
-		phys_addr_t *phys_addr, size_t *size);
+extern void __iomem *devm_not_request_and_map(struct platform_device *pdev, const char *name,
+		unsigned int num, phys_addr_t *phys_addr, size_t *size);
 
 /**
  * Request memory resource and map to virtual address
@@ -34,9 +33,8 @@ extern void __iomem *devm_not_request_and_map(struct platform_device *pdev,
  * @param[out]	size		size of the resource
  * @return	virtual address
  */
-extern void __iomem *devm_request_and_map(struct platform_device *pdev,
-		const char *name, unsigned int num,
-		phys_addr_t *phys_addr, size_t *size);
+extern void __iomem *devm_request_and_map(struct platform_device *pdev, const char *name,
+		unsigned int num, phys_addr_t *phys_addr, size_t *size);
 
 /**
  * Request memory resource and map to virtual address
@@ -46,8 +44,8 @@ extern void __iomem *devm_request_and_map(struct platform_device *pdev,
  * @param[out]	size		size of the resource
  * @return	virtual address
  */
-extern void __iomem *devm_request_and_map_byname(struct platform_device *pdev,
-		const char *name, phys_addr_t *phys_addr, size_t *size);
+extern void __iomem *devm_request_and_map_byname(struct platform_device *pdev, const char *name,
+		phys_addr_t *phys_addr, size_t *size);
 
 /**
  * Request clock and prepare
@@ -55,8 +53,7 @@ extern void __iomem *devm_request_and_map_byname(struct platform_device *pdev,
  * @param[in]	name		name of clock
  * @return	pointer to clock
  */
-extern struct clk *devm_clk_get_and_prepare(struct platform_device *pdev,
-		const char *name);
+extern struct clk *devm_clk_get_and_prepare(struct platform_device *pdev, const char *name);
 
 /**
  * Read single long physical address (sleeping function)

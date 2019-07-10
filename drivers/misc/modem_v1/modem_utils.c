@@ -97,7 +97,7 @@ static inline void ts2utc(struct timespec *ts, struct utc_time *utc)
 	utc->hour = tm.tm_hour;
 	utc->min = tm.tm_min;
 	utc->sec = tm.tm_sec;
-	utc->us = (u32)ns2us(ts->tv_nsec);
+	utc->us = ns2us(ts->tv_nsec);
 }
 
 void get_utc_time(struct utc_time *utc)
@@ -580,7 +580,7 @@ __be32 ipv4str_to_be32(const char *ipv4str, size_t count)
 	char *next = ipstr;
 	int i;
 
-	strlcpy(ipstr, ipv4str, ARRAY_SIZE(ipstr));
+	strncpy(ipstr, ipv4str, ARRAY_SIZE(ipstr));
 
 	for (i = 0; i < 4; i++) {
 		char *p;
@@ -1211,7 +1211,7 @@ struct mif_buff_mng *init_mif_buff_mng(unsigned char *buffer_start,
 		return NULL;
 	}
 
-	mif_info("Init mif_buffer management - buffer:%pK, size:%u, cell_size:%u\n",
+	mif_info("Init mif_buffer management - buffer:%p, size:%u, cell_size:%u\n",
 		buffer_start, buffer_size, cell_size);
 
 	bm = kzalloc(sizeof(struct mif_buff_mng), GFP_KERNEL);
@@ -1227,8 +1227,7 @@ struct mif_buff_mng *init_mif_buff_mng(unsigned char *buffer_start,
 	bm->used_cell_count = 0;
 
 	bm->current_map_index = 0;
-	bm->buffer_map_size = (unsigned int)(bm->cell_count /
-			MIF_BITS_FOR_MAP_CELL) + 1;
+	bm->buffer_map_size = (bm->cell_count / MIF_BITS_FOR_MAP_CELL) + 1;
 	bm->buffer_map = kzalloc((MIF_BUFF_MAP_CELL_SIZE * bm->buffer_map_size),
 		GFP_KERNEL);
 	if (bm->buffer_map == NULL) {
@@ -1236,7 +1235,7 @@ struct mif_buff_mng *init_mif_buff_mng(unsigned char *buffer_start,
 		return NULL;
 	}
 
-	mif_info("cell_count:%u, map_size:%u, map_size_byte:%lu  buff_map:%pK\n"
+	mif_info("cell_count:%u, map_size:%u, map_size_byte:%lu  buff_map:%p\n"
 		, bm->cell_count, bm->buffer_map_size,
 		(sizeof(unsigned int) * bm->buffer_map_size), bm->buffer_map);
 
@@ -1353,7 +1352,7 @@ void *alloc_mif_buff(struct mif_buff_mng *bm)
 
 #ifdef MIF_BUFF_DEBUG
 	mif_info("location:%d cell_size:%u\n", location, bm->cell_size);
-	mif_info("buffer_allocated:%pK\n", buff_allocated);
+	mif_info("buffer_allocated:%p\n", buff_allocated);
 	mif_info("used/free: %u/%u\n", get_mif_buff_used_count(bm),
 			get_mif_buff_free_count(bm));
 #endif
@@ -1377,7 +1376,7 @@ int free_mif_buff(struct mif_buff_mng *bm, void *buffer)
 	addr_diff = (unsigned int)(uc_buffer - bm->buffer_start);
 
 	if (addr_diff > bm->buffer_size) {
-		mif_err("ERR Buffer:%pK is not my pool one.\n", uc_buffer);
+		mif_err("ERR Buffer:%p is not my pool one.\n", uc_buffer);
 		return -1;
 	}
 
@@ -1386,12 +1385,12 @@ int free_mif_buff(struct mif_buff_mng *bm, void *buffer)
 	j = location % MIF_BITS_FOR_MAP_CELL;
 
 #ifdef MIF_BUFF_DEBUG
-	mif_info("uc_buff:%pK diff:%u\n", uc_buffer, addr_diff);
+	mif_info("uc_buff:%p diff:%u\n", uc_buffer, addr_diff);
 	mif_info("location:%d i:%d j:%d\n", location, i, j);
 #endif
 
 	if ((bm->buffer_map[i] & (MIF_64BIT_FIRST_BIT >> j)) == 0) {
-		mif_err("ERR Buffer:%pK is allready freed\n", uc_buffer);
+		mif_err("ERR Buffer:%p is allready freed\n", uc_buffer);
 		return -1;
 	}
 

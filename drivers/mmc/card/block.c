@@ -1127,25 +1127,24 @@ static void mmc_card_error_logging(struct mmc_card *card, struct mmc_blk_request
 	struct mmc_card_error_log *err_log;
 	int index = 0;
 	int error = 0;
-
-	if (!brq)
-		return;
-
 	err_log = card->err_log;
 
-	if (status & STATUS_MASK || brq->stop.resp[0] & STATUS_MASK) {
-		if (status & R1_ERROR || brq->stop.resp[0] & R1_ERROR)
+	if (status & STATUS_MASK || brq->stop.resp[0] & STATUS_MASK)
+	{
+		if(status & R1_ERROR || brq->stop.resp[0] & R1_ERROR)
 			err_log[index].ge_cnt++;
-		if (status & R1_CC_ERROR || brq->stop.resp[0] & R1_CC_ERROR)
+		if(status & R1_CC_ERROR || brq->stop.resp[0] & R1_CC_ERROR)
 			err_log[index].cc_cnt++;
-		if (status & R1_CARD_ECC_FAILED || brq->stop.resp[0] & R1_CARD_ECC_FAILED)
+		if(status & R1_CARD_ECC_FAILED || brq->stop.resp[0] & R1_CARD_ECC_FAILED)
 			err_log[index].ecc_cnt++;
-		if (status & R1_WP_VIOLATION || brq->stop.resp[0] & R1_WP_VIOLATION)
+		if(status & R1_WP_VIOLATION || brq->stop.resp[0] & R1_WP_VIOLATION)
 			err_log[index].wp_cnt++;
-		if (status & R1_OUT_OF_RANGE || brq->stop.resp[0] & R1_OUT_OF_RANGE)
-			err_log[index].oor_cnt++;
+		if(status & R1_OUT_OF_RANGE || brq->stop.resp[0] & R1_OUT_OF_RANGE)
+			err_log[index].oor_cnt++;	
 	}
 
+	if(!brq)
+		return;
 	if (brq->sbc.error)
 		mmc_error_count_log(card, index, brq->sbc.error, status);
 	if (brq->cmd.error) {
@@ -1179,8 +1178,6 @@ static ssize_t error_count_show(struct device *dev,
 	struct mmc_card_error_log *err_log;
 	int total_len = 0;
 	int i = 0;
-	u64 total_c_cnt = 0;
-	u64 total_t_cnt = 0;
 
 	disk = dev_to_disk(dev);
 
@@ -1208,18 +1205,6 @@ static ssize_t error_count_show(struct device *dev,
 				err_log[i].last_issue_time,
 				err_log[i].count);
 	}
-
-	for (i = 0; i < 6; i++) {
-		if (err_log[i].err_type == -EILSEQ && total_c_cnt < MAX_CNT_U64)
-			total_c_cnt += err_log[i].count;
-		if (err_log[i].err_type == -ETIMEDOUT && total_t_cnt < MAX_CNT_U64)
-			total_t_cnt += err_log[i].count;
-	}
-
-	total_len += snprintf(buf + total_len, PAGE_SIZE,
-						   "GE:%d,CC:%d,ECC:%d,WP:%d,OOR:%d,CRC:%lld,TMO:%lld\n",
-						   err_log[0].ge_cnt, err_log[0].cc_cnt, err_log[0].ecc_cnt,
-						   err_log[0].wp_cnt, err_log[0].oor_cnt, total_c_cnt, total_t_cnt);
 
  out:
 	return total_len;
@@ -1327,16 +1312,8 @@ static int card_busy_detect(struct mmc_card *card, unsigned int timeout_ms,
 		if (status & CMD_ERRORS) {
 			pr_err("%s: %s: command error reported, status %#x\n",
 					req->rq_disk->disk_name, __func__, status);
-
-			if (mmc_card_sd(card) && brq)
-				brq->data.error = -EIO;
-			else {
-				if (!(status & R1_WP_VIOLATION) && brq)
-					brq->data.error = -EIO;
-			}
-			
-			mmc_card_error_logging(card, brq, status);
-
+			if (!(status & R1_WP_VIOLATION))
+				*gen_err |= MMC_BLK_GEN_CMD_ERR;
 			if ((R1_CURRENT_STATE(status) == R1_STATE_RCV) ||
 					(R1_CURRENT_STATE(status) == R1_STATE_DATA)) {
 				err = send_stop_raw(card, &status);
@@ -1558,8 +1535,6 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 
 		if (stop_status & R1_CARD_ECC_FAILED)
 			*ecc_err = 1;
-			
-		mmc_card_error_logging(card, brq, stop_status);
 	}
 
 	/* Check for set block count errors */
@@ -1891,8 +1866,6 @@ static int mmc_blk_err_check(struct mmc_card *card,
 		if (rq_data_dir(req) == READ) {
 			if (ecc_err)
 				return MMC_BLK_ABORT; /* no retry for ECC error */
-			if (mmc_card_sd(card))
-				return MMC_BLK_ABORT; /* no retry for sd read data error */
 			return MMC_BLK_DATA_ERR;
 		} else {
 			return MMC_BLK_CMD_ERR;
@@ -2259,7 +2232,7 @@ static void mmc_blk_packed_hdr_wrq_prep(struct mmc_queue_req *mqrq,
 	struct mmc_blk_data *md = mq->data;
 	struct mmc_packed *packed = mqrq->packed;
 	bool do_rel_wr, do_data_tag;
-	__le32 *packed_cmd_hdr;
+	u32 *packed_cmd_hdr;
 	u8 hdr_blocks;
 	u8 i = 1;
 
@@ -2271,8 +2244,8 @@ static void mmc_blk_packed_hdr_wrq_prep(struct mmc_queue_req *mqrq,
 
 	packed_cmd_hdr = packed->cmd_hdr;
 	memset(packed_cmd_hdr, 0, sizeof(packed->cmd_hdr));
-	packed_cmd_hdr[0] = cpu_to_le32((packed->nr_entries << 16) |
-		(PACKED_CMD_WR << 8) | PACKED_CMD_VER);
+	packed_cmd_hdr[0] = (packed->nr_entries << 16) |
+		(PACKED_CMD_WR << 8) | PACKED_CMD_VER;
 	hdr_blocks = mmc_large_sector(card) ? 8 : 1;
 
 	/*
@@ -2286,14 +2259,14 @@ static void mmc_blk_packed_hdr_wrq_prep(struct mmc_queue_req *mqrq,
 			((brq->data.blocks * brq->data.blksz) >=
 			 card->ext_csd.data_tag_unit_size);
 		/* Argument of CMD23 */
-		packed_cmd_hdr[(i * 2)] = cpu_to_le32(
+		packed_cmd_hdr[(i * 2)] =
 			(do_rel_wr ? MMC_CMD23_ARG_REL_WR : 0) |
 			(do_data_tag ? MMC_CMD23_ARG_TAG_REQ : 0) |
-			blk_rq_sectors(prq));
+			blk_rq_sectors(prq);
 		/* Argument of CMD18 or CMD25 */
-		packed_cmd_hdr[((i * 2)) + 1] = cpu_to_le32(
+		packed_cmd_hdr[((i * 2)) + 1] =
 			mmc_card_blockaddr(card) ?
-			blk_rq_pos(prq) : blk_rq_pos(prq) << 9);
+			blk_rq_pos(prq) : blk_rq_pos(prq) << 9;
 		packed->blocks += blk_rq_sectors(prq);
 		i++;
 	}
@@ -2795,8 +2768,7 @@ static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
 	set_capacity(md->disk, size);
 
 	if (mmc_host_cmd23(card->host)) {
-		if ((mmc_card_mmc(card) &&
-		     card->csd.mmca_vsn >= CSD_SPEC_VER_3) ||
+		if (mmc_card_mmc(card) ||
 		    (mmc_card_sd(card) &&
 		     card->scr.cmds & SD_SCR_CMD23_SUPPORT &&
 		    mmc_card_uhs(card)))

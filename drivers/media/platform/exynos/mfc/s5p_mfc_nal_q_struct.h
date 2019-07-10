@@ -19,7 +19,7 @@
 #define NAL_Q_OUT_ENTRY_SIZE		256
 
 #define NAL_Q_IN_DEC_STR_SIZE		112
-#define NAL_Q_IN_ENC_STR_SIZE		204
+#define NAL_Q_IN_ENC_STR_SIZE		180
 #define NAL_Q_OUT_DEC_STR_SIZE		248
 #define NAL_Q_OUT_ENC_STR_SIZE		64
 
@@ -90,10 +90,8 @@ typedef struct __EncoderInputStr
 	int H264HDSvcExtension0;
 	int H264HDSvcExtension1;
 	int GopConfig2;
-	int Reserved[5];
-	int RcMode;
 	char reserved[NAL_Q_IN_ENTRY_SIZE - NAL_Q_IN_ENC_STR_SIZE];
-} EncoderInputStr; /* 51*4 = 204 bytes */
+} EncoderInputStr; /* 45*4 = 180 bytes */
 
 typedef struct __DecoderOutputStr
 {
@@ -207,6 +205,7 @@ typedef struct _nal_queue_in_handle {
 	void *in_alloc;
 	unsigned int in_exe_count;
 	nal_in_queue *nal_q_in_addr;
+	spinlock_t lock;
 } nal_queue_in_handle;
 
 typedef struct _nal_queue_out_handle {
@@ -221,7 +220,6 @@ typedef struct _nal_queue_handle {
 	nal_queue_in_handle *nal_q_in_handle;
 	nal_queue_out_handle *nal_q_out_handle;
 	nal_queue_state nal_q_state;
-	spinlock_t lock;
 	int nal_q_exception;
 } nal_queue_handle;
 

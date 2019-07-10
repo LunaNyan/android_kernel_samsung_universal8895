@@ -359,8 +359,7 @@ static void zpci_irq_handler(struct airq_struct *airq)
 				/* End of second scan with interrupts on. */
 				break;
 			/* First scan complete, reenable interrupts. */
-			if (zpci_set_irq_ctrl(SIC_IRQ_MODE_SINGLE, NULL, PCI_ISC))
-				break;
+			zpci_set_irq_ctrl(SIC_IRQ_MODE_SINGLE, NULL, PCI_ISC);
 			si = 0;
 			continue;
 		}
@@ -702,7 +701,8 @@ static int zpci_restore(struct device *dev)
 		goto out;
 
 	zpci_map_resources(pdev);
-	zpci_register_ioat(zdev, 0, zdev->start_dma, zdev->end_dma,
+	zpci_register_ioat(zdev, 0, zdev->start_dma + PAGE_OFFSET,
+			   zdev->start_dma + zdev->iommu_size - 1,
 			   (u64) zdev->dma_table);
 
 out:
@@ -922,7 +922,7 @@ static int __init pci_base_init(void)
 	if (!s390_pci_probe)
 		return 0;
 
-	if (!test_facility(69) || !test_facility(71))
+	if (!test_facility(69) || !test_facility(71) || !test_facility(72))
 		return 0;
 
 	rc = zpci_debug_init();

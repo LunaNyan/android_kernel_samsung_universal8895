@@ -33,7 +33,6 @@
 #include <linux/bug.h>
 #include <linux/v4l2-mediabus.h>
 #include <linux/gpio.h>
-#include <linux/memblock.h>
 
 #ifdef CONFIG_OF
 #include <linux/of.h>
@@ -83,62 +82,6 @@ struct fimc_is_sysfs_actuator sysfs_actuator;
 struct fimc_is_sysfs_sensor sysfs_sensor;
 #endif
 #endif
-
-static struct vm_struct fimc_is_lib_vm;
-static int __init fimc_is_lib_mem_alloc(char *str)
-{
-	ulong addr = 0;
-
-	if (kstrtoul(str, 0, (ulong *)&addr) || !addr) {
-		probe_warn("invalid fimc-is library memory address, use default");
-		addr = LIB_START;
-	}
-
-	if (addr != LIB_START)
-		probe_warn("use different address [reserve-fimc=0x%lx default:0x%lx]",
-				addr, LIB_START);
-
-	fimc_is_lib_vm.phys_addr = memblock_alloc(LIB_SIZE, SZ_4K);
-	fimc_is_lib_vm.addr = (void *)addr;
-	fimc_is_lib_vm.size = LIB_SIZE + PAGE_SIZE;
-
-	vm_area_add_early(&fimc_is_lib_vm);
-
-	probe_info("fimc-is library memory: 0x%lx\n", addr);
-
-	return 0;
-}
-__setup("reserve-fimc=", fimc_is_lib_mem_alloc);
-
-static int __init fimc_is_lib_mem_map(void)
-{
-	int page_size, i;
-	struct page *page;
-	struct page **pages;
-
-	if (!fimc_is_lib_vm.phys_addr) {
-		probe_err("There is no reserve-fimc= at bootargs.");
-		return -ENOMEM;
-	}
-
-	page_size = fimc_is_lib_vm.size / PAGE_SIZE;
-	pages = kzalloc(sizeof(struct page*) * page_size, GFP_KERNEL);
-	page = phys_to_page(fimc_is_lib_vm.phys_addr);
-
-	for (i = 0; i < page_size; i++)
-		pages[i] = page++;
-
-	if (map_vm_area(&fimc_is_lib_vm, PAGE_KERNEL, pages)) {
-		probe_err("failed to mapping between virt and phys for binary");
-		vunmap(fimc_is_lib_vm.addr);
-		kfree(pages);
-		return -ENOMEM;
-	}
-
-	kfree(pages);
-
-	return 0;
-}
 
 #ifdef CONFIG_CPU_THERMAL_IPA
 static int fimc_is_mif_throttling_notifier(struct notifier_block *nb,
@@ -748,51 +691,6 @@ static ssize_t store_en_dvfs(struct device *dev,
 	return count;
 }
 
-static ssize_t show_hal_debug_mode(struct device *dev, struct device_attribute *attr,
-				  char *buf)
-{
-	return snprintf(buf, PAGE_SIZE, "0x%lx\n", sysfs_debug.hal_debug_mode);
-}
-
-static ssize_t store_hal_debug_mode(struct device *dev,
-				 struct device_attribute *attr,
-				 const char *buf, size_t count)
-{
-	int ret;
-	unsigned long long debug_mode = 0;
-
-	ret = kstrtoull(buf, 16 /* hexa */, &debug_mode);
-	if (ret < 0) {
-		pr_err("%s, %s, failed for debug_mode:%llu, ret:%d", __func__, buf, debug_mode, ret);
-		return 0;
-	}
-
-	sysfs_debug.hal_debug_mode = (unsigned long)debug_mode;
-
-	return count;
-}
-
-static ssize_t show_hal_debug_delay(struct device *dev, struct device_attribute *attr,
-				  char *buf)
-{
-	return snprintf(buf, PAGE_SIZE, "%u ms\n", sysfs_debug.hal_debug_delay);
-}
-
-static ssize_t store_hal_debug_delay(struct device *dev,
-				 struct device_attribute *attr,
-				 const char *buf, size_t count)
-{
-	int ret;
-
-	ret = kstrtouint(buf, 10, &sysfs_debug.hal_debug_delay);
-	if (ret < 0) {
-		pr_err("%s, %s, failed for debug_delay:%u, ret:%d", __func__, buf, sysfs_debug.hal_debug_delay, ret);
-		return 0;
-	}
-
-	return count;
-}
-
 #ifdef ENABLE_DBG_STATE
 static ssize_t show_debug_state(struct device *dev, struct device_attribute *attr,
 				  char *buf)
@@ -1002,8 +900,6 @@ static ssize_t store_en_fixed_sensor(struct device *dev,
 static DEVICE_ATTR(en_clk_gate, 0644, show_en_clk_gate, store_en_clk_gate);
 static DEVICE_ATTR(clk_gate_mode, 0644, show_clk_gate_mode, store_clk_gate_mode);
 static DEVICE_ATTR(en_dvfs, 0644, show_en_dvfs, store_en_dvfs);
-static DEVICE_ATTR(hal_debug_mode, 0644, show_hal_debug_mode, store_hal_debug_mode);
-static DEVICE_ATTR(hal_debug_delay, 0644, show_hal_debug_delay, store_hal_debug_delay);
 
 #ifdef ENABLE_DBG_STATE
 static DEVICE_ATTR(en_debug_state, 0644, show_debug_state, store_debug_state);
@@ -1024,8 +920,6 @@ static struct attribute *fimc_is_debug_entries[] = {
 	&dev_attr_en_clk_gate.attr,
 	&dev_attr_clk_gate_mode.attr,
 	&dev_attr_en_dvfs.attr,
-	&dev_attr_hal_debug_mode.attr,
-	&dev_attr_hal_debug_delay.attr,
 #ifdef ENABLE_DBG_STATE
 	&dev_attr_en_debug_state.attr,
 #endif
@@ -1139,12 +1033,6 @@ static int fimc_is_probe(struct platform_device *pdev)
 			probe_err("clk_get is fail(%d)", ret);
 			goto p_err3;
 		}
-	}
-
-	ret = fimc_is_lib_mem_map();
-	if (ret) {
-		probe_err("fimc_is_lib_mem_map is fail(%d)", ret);
-		goto p_err3;
 	}
 
 	ret = fimc_is_mem_init(&core->resourcemgr.mem, core->pdev);
@@ -1403,8 +1291,6 @@ static int fimc_is_probe(struct platform_device *pdev)
 	/* set sysfs for debuging */
 	sysfs_debug.en_clk_gate = 0;
 	sysfs_debug.en_dvfs = 1;
-	sysfs_debug.hal_debug_mode = 0;
-	sysfs_debug.hal_debug_delay = DBG_HAL_DEAD_PANIC_DELAY;
 #ifdef ENABLE_CLOCK_GATE
 	sysfs_debug.en_clk_gate = 1;
 #ifdef HAS_FW_CLOCK_GATE

@@ -252,8 +252,9 @@ struct s5p_mfc_buf *s5p_mfc_get_move_buf_addr(spinlock_t *plock,
 	mfc_buf = list_entry(from_queue->head.next, struct s5p_mfc_buf, list);
 
 	if (s5p_mfc_mem_get_daddr_vb(&mfc_buf->vb.vb2_buf, 0) == addr) {
+		mfc_debug(2, "mfc_buf: %p\n", mfc_buf);
 		mfc_debug(2, "First plane address: 0x%08llx\n",
-				s5p_mfc_mem_get_daddr_vb(&mfc_buf->vb.vb2_buf, 0));
+			s5p_mfc_mem_get_daddr_vb(&mfc_buf->vb.vb2_buf, 0));
 
 		list_del(&mfc_buf->list);
 		from_queue->count--;
@@ -382,7 +383,7 @@ struct s5p_mfc_buf *s5p_mfc_find_move_buf_vb(spinlock_t *plock,
 	}
 
 	if (found == 1) {
-		if (released_flag & (1 << mfc_buf->vb.vb2_buf.index)) {
+		if (released_flag & (1 <<  mfc_buf->vb.vb2_buf.index)) {
 			list_del(&mfc_buf->list);
 			from_queue->count--;
 
@@ -526,33 +527,10 @@ void s5p_mfc_cleanup_queue(spinlock_t *plock, struct s5p_mfc_buf_queue *queue)
 	spin_unlock_irqrestore(plock, flags);
 }
 
-struct s5p_mfc_buf *mfc_find_buf_index(spinlock_t *plock, struct s5p_mfc_buf_queue *queue,
-		int index)
-{
-	unsigned long flags;
-	struct s5p_mfc_buf *mfc_buf = NULL;
-	int buf_index;
-
-	spin_lock_irqsave(plock, flags);
-
-	mfc_debug(2, "Looking for index: %d\n", index);
-	list_for_each_entry(mfc_buf, &queue->head, list) {
-		buf_index = mfc_buf->vb.vb2_buf.index;
-
-		if (index == buf_index) {
-			mfc_debug(2, "Found index: %d\n", buf_index);
-			spin_unlock_irqrestore(plock, flags);
-			return mfc_buf;
-		}
-	}
-
-	spin_unlock_irqrestore(plock, flags);
-	return NULL;
-}
-
 /*
- * Check released and enqueued buffers. (dst queue)
- * Check and move reuse buffers. (ref -> dst queue)
+ * Check released buffers are enqueued again.
+ * s5p_mfc_dec.assigned_fd
+ * s5p_mfc_dec.available_dpb
  */
 static void mfc_check_ref_frame(spinlock_t *plock, struct s5p_mfc_buf_queue *dst_queue,
 		struct s5p_mfc_buf_queue *ref_queue,
@@ -566,7 +544,6 @@ static void mfc_check_ref_frame(spinlock_t *plock, struct s5p_mfc_buf_queue *dst
 
 	spin_lock_irqsave(plock, flags);
 
-	/* reuse buffers : error frame, decoding only frame (ref -> dst queue) */
 	list_for_each_entry_safe(ref_mb, tmp_mb, &ref_queue->head, list) {
 		index = ref_mb->vb.vb2_buf.index;
 		if (index == ref_index) {
@@ -586,7 +563,6 @@ static void mfc_check_ref_frame(spinlock_t *plock, struct s5p_mfc_buf_queue *dst
 		}
 	}
 
-	/* released and enqueued buffers (dst queue) */
 	if (!found) {
 		list_for_each_entry_safe(ref_mb, tmp_mb, &dst_queue->head, list) {
 			index = ref_mb->vb.vb2_buf.index;
@@ -619,83 +595,27 @@ void s5p_mfc_handle_released_info(struct s5p_mfc_ctx *ctx,
 	}
 	refBuf = &dec->ref_info[index];
 
-	if (dec->dec_only_release_flag) {
-		for (t = 0; t < MFC_MAX_DPBS; t++) {
-			if (dec->dec_only_release_flag & (1 << t)) {
-				mfc_debug(2, "Release FD[%d] = %03d (already released in dec only)\n",
-						t, dec->assigned_fd[t]);
-				refBuf->dpb[ncount].fd[0] = dec->assigned_fd[t];
-				ncount++;
-				dec->dec_only_release_flag &= ~(1 << t);
-			}
-		}
-	}
-
 	if (released_flag) {
 		for (t = 0; t < MFC_MAX_DPBS; t++) {
 			if (released_flag & (1 << t)) {
 				if (dec->err_reuse_flag & (1 << t)) {
-					/* reuse buffer with error : do not update released info */
-					mfc_debug(2, "Released, but reuse(error frame). FD[%d] = %03d\n",
+					mfc_debug(2, "Released, but reuse. FD[%d] = %03d\n",
 							t, dec->assigned_fd[t]);
 					dec->err_reuse_flag &= ~(1 << t);
-				} else if ((t != index) &&
-						mfc_find_buf_index(&ctx->buf_queue_lock, &ctx->ref_buf_queue, t)) {
-					/* decoding only frame: do not update released info */
-					mfc_debug(2, "Released, but reuse(decoding only). FD[%d] = %03d\n",
-							t, dec->assigned_fd[t]);
 				} else {
-					/* displayed and released frame */
 					mfc_debug(2, "Release FD[%d] = %03d\n",
 							t, dec->assigned_fd[t]);
 					refBuf->dpb[ncount].fd[0] = dec->assigned_fd[t];
 					ncount++;
 				}
 				dec->assigned_fd[t] = MFC_INFO_INIT_FD;
-				mfc_check_ref_frame(&ctx->buf_queue_lock, &ctx->dst_buf_queue, &ctx->ref_buf_queue, ctx, t);
+				mfc_check_ref_frame(&ctx->buf_queue_lock, &ctx->dst_buf_queue, &dec->ref_buf_queue, ctx, t);
 			}
 		}
 	}
 
 	if (ncount != MFC_MAX_DPBS)
 		refBuf->dpb[ncount].fd[0] = MFC_INFO_INIT_FD;
-}
-
-struct s5p_mfc_buf *s5p_mfc_move_reuse_buffer(struct s5p_mfc_ctx *ctx, int release_index)
-{
-	struct s5p_mfc_dec *dec = ctx->dec_priv;
-	struct s5p_mfc_buf_queue *dst_queue = &ctx->dst_buf_queue;
-	struct s5p_mfc_buf_queue *ref_queue = &ctx->ref_buf_queue;
-	struct s5p_mfc_buf *ref_mb, *tmp_mb;
-	spinlock_t *plock = &ctx->buf_queue_lock;
-	unsigned long flags;
-	int index;
-
-	spin_lock_irqsave(plock, flags);
-
-	list_for_each_entry_safe(ref_mb, tmp_mb, &ref_queue->head, list) {
-		index = ref_mb->vb.vb2_buf.index;
-		if (index == release_index) {
-			s5p_mfc_raw_buf_prot(ctx, ref_mb, false);
-
-			ref_mb->used = 0;
-
-			list_del(&ref_mb->list);
-			ref_queue->count--;
-
-			list_add_tail(&ref_mb->list, &dst_queue->head);
-			dst_queue->count++;
-
-			clear_bit(index, &dec->available_dpb);
-			mfc_debug(2, "buffer[%d] is moved to dst queue for reuse\n", index);
-
-			spin_unlock_irqrestore(plock, flags);
-			return ref_mb;
-		}
-	}
-
-	spin_unlock_irqrestore(plock, flags);
-	return NULL;
 }
 
 void s5p_mfc_cleanup_enc_src_queue(struct s5p_mfc_ctx *ctx)
@@ -791,7 +711,7 @@ struct s5p_mfc_buf *mfc_check_full_refered_dpb(struct s5p_mfc_ctx *ctx)
 		return NULL;
 	}
 
-	sum_dpb = ctx->dst_buf_queue.count + ctx->ref_buf_queue.count;
+	sum_dpb = ctx->dst_buf_queue.count + dec->ref_buf_queue.count;
 
 	if ((ctx->dst_buf_queue.count > 1) && (sum_dpb >= (ctx->dpb_count + 5))) {
 		if (list_empty(&ctx->dst_buf_queue.head)) {
@@ -802,17 +722,17 @@ struct s5p_mfc_buf *mfc_check_full_refered_dpb(struct s5p_mfc_ctx *ctx)
 		mfc_buf = list_entry(ctx->dst_buf_queue.head.next,
 				struct s5p_mfc_buf, list);
 	} else if ((ctx->dst_buf_queue.count == 0)
-			&& ((ctx->ref_buf_queue.count) == (ctx->dpb_count + 5))) {
-		if (list_empty(&ctx->ref_buf_queue.head)) {
+			&& ((dec->ref_buf_queue.count) == (ctx->dpb_count + 5))) {
+		if (list_empty(&dec->ref_buf_queue.head)) {
 			mfc_err_ctx("ref_buf_queue is empty\n");
 			return NULL;
 		}
 		mfc_debug(2, "All buffers are referenced.\n");
-		mfc_buf = list_entry(ctx->ref_buf_queue.head.next,
+		mfc_buf = list_entry(dec->ref_buf_queue.head.next,
 				struct s5p_mfc_buf, list);
 	} else {
 		mfc_debug(2, "waiting for dst buffer, ref = %d, dst = %d\n",
-				ctx->ref_buf_queue.count, ctx->dst_buf_queue.count);
+				dec->ref_buf_queue.count, ctx->dst_buf_queue.count);
 		ctx->clear_work_bit = 1;
 	}
 
@@ -891,7 +811,6 @@ struct s5p_mfc_buf *s5p_mfc_search_move_dpb_nal_q(struct s5p_mfc_ctx *ctx, unsig
 /* Add dst buffer in dst_buf_queue */
 void s5p_mfc_store_dpb(struct s5p_mfc_ctx *ctx, struct vb2_buffer *vb)
 {
-	struct s5p_mfc_dev *dev = ctx->dev;
 	unsigned long flags;
 	struct s5p_mfc_dec *dec;
 	struct s5p_mfc_buf *mfc_buf;
@@ -922,32 +841,6 @@ void s5p_mfc_store_dpb(struct s5p_mfc_ctx *ctx, struct vb2_buffer *vb)
 	ctx->dst_buf_queue.count++;
 
 	spin_unlock_irqrestore(&ctx->buf_queue_lock, flags);
-
-	mutex_lock(&dec->dpb_mutex);
-	if (!dec->assigned_refcnt[index]) {
-		s5p_mfc_get_iovmm(ctx, vb);
-	} else {
-		if (dec->assigned_addr[index][0] != mfc_buf->planes.raw[0]) {
-			if (dec->dynamic_used & (1 << index)) {
-				mfc_err_ctx("[IOVMM] ref DPB[%d] was changed %#llx->%#llx (used: %#x)\n",
-						index, dec->assigned_addr[index][0],
-						mfc_buf->planes.raw[0], dec->dynamic_used);
-				MFC_TRACE_CTX("ref DPB[%d] %#llx->%#llx (%#x)\n",
-						index, dec->assigned_addr[index][0],
-						mfc_buf->planes.raw[0], dec->dynamic_used);
-			} else {
-				mfc_debug(2, "[IOVMM] DPB[%d] was changed %#llx->%#llx (used: %#x)\n",
-						index, dec->assigned_addr[index][0],
-						mfc_buf->planes.raw[0], dec->dynamic_used);
-				MFC_TRACE_CTX("DPB[%d] %#llx->%#llx (%#x)\n",
-						index, dec->assigned_addr[index][0],
-						mfc_buf->planes.raw[0], dec->dynamic_used);
-				s5p_mfc_put_iovmm(ctx, ctx->dst_fmt->mem_planes, index);
-				s5p_mfc_get_iovmm(ctx, vb);
-			}
-		}
-	}
-	mutex_unlock(&dec->dpb_mutex);
 }
 
 void s5p_mfc_cleanup_nal_queue(struct s5p_mfc_ctx *ctx)

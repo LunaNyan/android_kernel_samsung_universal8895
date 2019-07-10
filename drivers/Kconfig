@@ -208,8 +208,6 @@ source "drivers/hwtracing/intel_th/Kconfig"
 
 source "drivers/fpga/Kconfig"
 
-source "drivers/tee/Kconfig"
-
 source "drivers/bts/Kconfig"
 
 source "drivers/trace/Kconfig"
@@ -228,15 +226,10 @@ source "drivers/sensorhub/atmel/Kconfig"
 
 source "drivers/sensorhub/brcm/Kconfig"
 
-source "drivers/optics/Kconfig"
-
 source "drivers/gps/Kconfig"
 
 source "drivers/motor/Kconfig"
 
 source "drivers/fingerprint/Kconfig"
 
-source "drivers/gator_5.26/Kconfig"
-
-source "drivers/redriver/Kconfig"
 endmenu

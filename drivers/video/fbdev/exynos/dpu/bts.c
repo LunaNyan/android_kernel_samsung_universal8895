@@ -147,8 +147,6 @@ static void dpu_bts_find_max_disp_freq(struct decon_device *decon,
 
 	if (decon->bts.max_disp_freq < disp_op_freq)
 		decon->bts.max_disp_freq = disp_op_freq;
-	if (decon->id == 2 && (decon->bts.max_disp_freq < decon->bts.disp_freq_minlock))
-		decon->bts.max_disp_freq = decon->bts.disp_freq_minlock;
 
 	DPU_DEBUG_BTS("MAX DISP CH FREQ = %d\n", decon->bts.max_disp_freq);
 }
@@ -229,10 +227,11 @@ void dpu_bts_calc_bw(struct decon_device *decon, struct decon_reg_data *regs)
 
 	memset(&bts_info, 0, sizeof(struct bts_decon_info));
 	for (i = 0; i < MAX_DECON_WIN; ++i) {
+		idx = config[i].idma_type;
 		if (config[i].state == DECON_WIN_STATE_BUFFER) {
-			idx = config[i].idma_type;
 			bts_info.dpp[idx].used = true;
 		} else {
+			bts_info.dpp[idx].used = false;
 			continue;
 		}
 
@@ -337,20 +336,6 @@ void dpu_bts_update_qos_int(struct decon_device *decon, u32 int_freq)
 	DPU_INFO_BTS("%s: decon%d, freq(Khz): int %u \n", __func__, decon->id, int_freq);
 }
 
-void dpu_bts_update_qos_disp(struct decon_device *decon, u32 disp_freq)
-{
-	if (decon->id != 2)
-		return;
-
-	if (pm_qos_request_active(&decon->bts.disp_qos)) {
-		decon->bts.disp_freq_minlock = disp_freq;
-		pm_qos_update_request(&decon->bts.disp_qos, disp_freq);
-	} else
-		decon_err("%s: error (%d)\n", __func__, decon->id);
-
-	DPU_INFO_BTS("%s: decon%d, freq(Khz): disp %u\n", __func__, decon->id, disp_freq);
-}
-
 void dpu_bts_update_qos_scen(struct decon_device *decon, u32 val)
 {
 	if (decon->id != 2)
@@ -426,7 +411,6 @@ void dpu_bts_init(struct decon_device *decon)
 	pm_qos_add_request(&decon->bts.int_qos, PM_QOS_DEVICE_THROUGHPUT, 0);
 	pm_qos_add_request(&decon->bts.disp_qos, PM_QOS_DISPLAY_THROUGHPUT, 0);
 	decon->bts.scen_updated = 0;
-	decon->bts.disp_freq_minlock = 0;
 }
 
 void dpu_bts_deinit(struct decon_device *decon)
@@ -445,7 +429,6 @@ struct decon_bts_ops decon_bts_control = {
 	.bts_release_bw		= dpu_bts_release_bw,
 	.bts_update_qos_mif	= dpu_bts_update_qos_mif,
 	.bts_update_qos_int	= dpu_bts_update_qos_int,
-	.bts_update_qos_disp	= dpu_bts_update_qos_disp,
 	.bts_update_qos_scen	= dpu_bts_update_qos_scen,
 	.bts_deinit		= dpu_bts_deinit,
 };

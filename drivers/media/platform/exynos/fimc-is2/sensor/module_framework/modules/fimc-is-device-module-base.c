@@ -172,14 +172,6 @@ int sensor_module_init(struct v4l2_subdev *subdev, u32 val)
 		goto p_err;
 	}
 
-#ifdef USE_FACE_UNLOCK_AE_AWB_INIT
-	ret = CALL_CISOPS(&sensor_peri->cis, cis_set_initial_exposure, subdev_cis);
-	if (ret) {
-		err("v4l2_subdev_call(set_initial_exposure) is fail(%d)", ret);
-		goto p_err;
-	}
-#endif
-
 	subdev_flash = sensor_peri->subdev_flash;
 	if (subdev_flash != NULL) {
 		ret = v4l2_subdev_call(subdev_flash, core, init, 0);
@@ -221,9 +213,6 @@ int sensor_module_init(struct v4l2_subdev *subdev, u32 val)
 
 		subdev_actuator = sensor_peri->subdev_actuator;
 		BUG_ON(!subdev_actuator);
-
-		if (!sensor_peri->reuse_3a_value)
-			sensor_peri->actuator->position = 0;
 
 		ret = v4l2_subdev_call(subdev_actuator, core, init, 0);
 		if (ret) {
@@ -278,15 +267,6 @@ int sensor_module_deinit(struct v4l2_subdev *subdev)
 
 	/* kthread stop to sensor setting when s_format */
 	fimc_is_sensor_deinit_mode_change_thread(sensor_peri);
-
-#ifdef CONFIG_OIS_USE_RUMBA_S6
-	if (sensor_peri->subdev_ois != NULL) {
-		ret = CALL_OISOPS(sensor_peri->ois, ois_deinit, sensor_peri->subdev_ois);
-		if (ret < 0) {
-			err("v4l2_subdev_call(ois_deinit) is fail(%d)", ret);
-		}
-	}
-#endif
 
 	if (sensor_peri->flash != NULL) {
 		sensor_peri->flash->flash_data.mode = CAM2_FLASH_MODE_OFF;

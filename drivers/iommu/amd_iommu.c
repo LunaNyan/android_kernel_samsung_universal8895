@@ -352,11 +352,9 @@ static void init_iommu_group(struct device *dev)
 	if (!domain)
 		goto out;
 
-	if (to_pdomain(domain)->flags == PD_DMA_OPS_MASK) {
-		dma_domain = to_pdomain(domain)->priv;
-		init_unity_mappings_for_device(dev, dma_domain);
-	}
+	dma_domain = to_pdomain(domain)->priv;
 
+	init_unity_mappings_for_device(dev, dma_domain);
 out:
 	iommu_group_put(group);
 }
@@ -926,7 +924,7 @@ again:
 	next_tail = (tail + sizeof(*cmd)) % CMD_BUFFER_SIZE;
 	left      = (head - next_tail) % CMD_BUFFER_SIZE;
 
-	if (left <= 0x20) {
+	if (left <= 2) {
 		struct iommu_cmd sync_cmd;
 		volatile u64 sem = 0;
 		int ret;
@@ -1833,9 +1831,6 @@ static void dma_ops_domain_free(struct dma_ops_domain *dom)
 		kfree(dom->aperture[i]);
 	}
 
-	if (dom->domain.id)
-		domain_id_free(dom->domain.id);
-
 	kfree(dom);
 }
 
@@ -2327,15 +2322,8 @@ static void update_device_table(struct protection_domain *domain)
 {
 	struct iommu_dev_data *dev_data;
 
-	list_for_each_entry(dev_data, &domain->dev_list, list) {
+	list_for_each_entry(dev_data, &domain->dev_list, list)
 		set_dte_entry(dev_data->devid, domain, dev_data->ats.enabled);
-
-		if (dev_data->devid == dev_data->alias)
-			continue;
-
-		/* There is an alias, update device table entry for it */
-		set_dte_entry(dev_data->alias, domain, dev_data->ats.enabled);
-	}
 }
 
 static void update_domain(struct protection_domain *domain)
@@ -2982,7 +2970,9 @@ static struct iommu_domain *amd_iommu_domain_alloc(unsigned type)
 static void amd_iommu_domain_free(struct iommu_domain *dom)
 {
 	struct protection_domain *domain;
-	struct dma_ops_domain *dma_dom;
+
+	if (!dom)
+		return;
 
 	domain = to_pdomain(dom);
 
@@ -2991,24 +2981,13 @@ static void amd_iommu_domain_free(struct iommu_domain *dom)
 
 	BUG_ON(domain->dev_cnt != 0);
 
-	if (!dom)
-		return;
+	if (domain->mode != PAGE_MODE_NONE)
+		free_pagetable(domain);
 
-	switch (dom->type) {
-	case IOMMU_DOMAIN_DMA:
-		dma_dom = domain->priv;
-		dma_ops_domain_free(dma_dom);
-		break;
-	default:
-		if (domain->mode != PAGE_MODE_NONE)
-			free_pagetable(domain);
+	if (domain->flags & PD_IOMMUV2_MASK)
+		free_gcr3_table(domain);
 
-		if (domain->flags & PD_IOMMUV2_MASK)
-			free_gcr3_table(domain);
-
-		protection_domain_free(domain);
-		break;
-	}
+	protection_domain_free(domain);
 }
 
 static void amd_iommu_detach_device(struct iommu_domain *dom,
@@ -3096,7 +3075,6 @@ static size_t amd_iommu_unmap(struct iommu_domain *dom, unsigned long iova,
 	mutex_unlock(&domain->api_lock);
 
 	domain_flush_tlb_pde(domain);
-	domain_flush_complete(domain);
 
 	return unmap_size;
 }

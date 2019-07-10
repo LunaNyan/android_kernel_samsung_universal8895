@@ -237,7 +237,6 @@ typedef struct _muic_data_t {
 	int			rid;
 	bool			is_ccic_attach;
 	int			is_ccic_afc_enable;
-	bool			is_ccic_rp56_enable;
 #endif
 }muic_data_t;
 

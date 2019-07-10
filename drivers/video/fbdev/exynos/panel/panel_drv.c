@@ -83,7 +83,7 @@ int get_lcd_info(char *arg)
 
 EXPORT_SYMBOL(get_lcd_info);
 
-void clear_disp_det_pend(struct panel_device *panel)
+static inline void clear_disp_det_pend(struct panel_device *panel)
 {
 	int pend_disp_det;
 	struct panel_pad *pad = &panel->pad;
@@ -282,11 +282,6 @@ static int __panel_seq_exit_alpm(struct panel_device *panel)
 	int volt;
 	struct panel_pad *pad = &panel->pad;
 #endif
-#ifdef CONFIG_ACTIVE_CLOCK
-	struct act_clock_dev *act_dev = &panel->act_clk_dev;
-	struct act_clk_info *act_info = &act_dev->act_info;
-#endif
-
 	panel_info("PANEL:INFO:%s:was called\n", __func__);
 #ifdef CONFIG_SET_1p5_ALPM
 	volt = regulator_get_voltage(pad->regulator[REGULATOR_1p6V]);
@@ -304,15 +299,6 @@ static int __panel_seq_exit_alpm(struct panel_device *panel)
 		panel_err("PANEL:ERR:%s, failed to write init seqtbl\n",
 			__func__);
 	}
-
-#ifdef CONFIG_ACTIVE_CLOCK
-	if ((act_info != NULL) && (act_info->en)) {
-		panel_info("PANEL:INFO:%s:act_info %d -> disable\n",
-			__func__, act_info->en);
-		act_info->en = 0;
-	}
-#endif
-
 	backlight_update_status(bd);
 	return ret;
 }
@@ -527,7 +513,6 @@ static struct common_panel_info *panel_detect(struct panel_device *panel)
 	int ret = 0;
 	struct common_panel_info *info;
 	struct panel_info *panel_data;
-	bool detect = true;
 
 	if (panel == NULL) {
 		panel_err("%s, panel is null\n", __func__);
@@ -544,7 +529,7 @@ static struct common_panel_info *panel_detect(struct panel_device *panel)
  	ret = read_panel_id(panel, id);
 	if (unlikely(ret < 0)) {
 		panel_err("%s, failed to read id(ret %d)\n", __func__, ret);
-		detect = false;
+		return NULL;
 	}
 
 	panel_id = (id[0] << 16) | (id[1] << 8) | id[2];
@@ -552,14 +537,6 @@ static struct common_panel_info *panel_detect(struct panel_device *panel)
 
 	panel_dbg("%s, ldi_name %s, panel_id 0x%08X\n",
 			__func__, panel_data->ldi_name, panel_id);
-
-#ifdef CONFIG_SUPPORT_PANEL_SWAP
-	if ((boot_panel_id >= 0) && (detect == true)) {
-		boot_panel_id = (id[0] << 16) | (id[1] << 8) | id[2];
-		panel_info("PANEL:INFO:%s:boot_panel_id : 0x%x\n",
-				__func__, boot_panel_id);
-	}
-#endif
 
 	info = find_panel(panel, panel_id);
 	if (unlikely(!info)) {
@@ -644,12 +621,6 @@ int panel_probe(struct panel_device *panel)
 	panel_data->props.temperature = NORMAL_TEMPERATURE;
 	panel_data->props.alpm_mode = ALPM_OFF;
 	panel_data->props.cur_alpm_mode = ALPM_OFF;
-
-#ifdef CONFIG_SUPPORT_GRAM_CHECKSUM
-	panel_data->props.gct_on = GRAM_TEST_OFF;
-	panel_data->props.gct_vddm = VDDM_ORIG;
-	panel_data->props.gct_pattern = GCT_PATTERN_NONE;
-#endif
 	for (i = 0; i < MAX_CMD_LEVEL; i++)
 		panel_data->props.key[i] = 0;
 	mutex_unlock(&panel->op_lock);
@@ -659,9 +630,6 @@ int panel_probe(struct panel_device *panel)
 #ifdef CONFIG_SUPPORT_XTALK_MODE
 	panel_data->props.xtalk_mode = XTALK_OFF;
 #endif
-	panel_data->props.poc_onoff = POC_ONOFF_ON;
-	panel_data->props.irc_onoff = IRC_ONOFF_ON;
-
 	mutex_unlock(&panel->panel_bl.lock);
 
 	ret = panel_prepare(panel, info);
@@ -1164,63 +1132,6 @@ static int panel_set_reset_cb(struct v4l2_subdev *sd)
 
 	return 0;
 }
-#ifdef CONFIG_SUPPORT_INDISPLAY
-
-static int panel_set_finger_layer(struct panel_device *panel, void *arg)
-{
-	int ret = 0;
-	int max_br, cur_br;
-	int *cmd = (int *)arg;
-	struct panel_bl_device *panel_bl;
-	struct backlight_device *bd;
-
-	panel_info("+ %s\n", __func__);
-
-	panel_bl = &panel->panel_bl;
-	if (panel_bl == NULL) {
-		panel_err("PANEL:ERR:%s:bl is null\n", __func__);
-		return -EINVAL;
-	}
-	bd = panel_bl->bd;
-	if (bd == NULL) {
-		panel_err("PANEL:ERR:%s:bd is null\n", __func__);
-		return -EINVAL;
-	}
-	if (cmd == NULL) {
-		panel_err("PANEL:ERR:%s:invalid arg\n", __func__);
-		return -EINVAL;
-	}
-
-	max_br = bd->props.max_brightness;
-	cur_br = bd->props.brightness;
-
-	panel_info("%s:max : %d, cur : %d\n", __func__, max_br, cur_br);
-
-	mutex_lock(&panel_bl->lock);
-	
-	if(*cmd == 0) {
-		panel_info("PANEL:INFO:%s:disable finger layer\n", __func__);
-		panel_bl->finger_layer = false;
-		panel_bl->subdev[PANEL_BL_SUBDEV_TYPE_DISP].brightness = panel_bl->saved_br;
-	} else {
-		panel_info("PANEL:INFO:%s:enable finger layer\n", __func__);
-		panel_bl->finger_layer = true;
-		panel_bl->saved_br = cur_br;
-		panel_bl->subdev[PANEL_BL_SUBDEV_TYPE_DISP].brightness = max_br;
-	}
-
-	ret = panel_bl_set_brightness(panel_bl, PANEL_BL_SUBDEV_TYPE_DISP, 1);
-	if (ret) {
-		pr_err("%s : fail to set brightness\n", __func__);
-	}
-
-	panel_info("- %s\n", __func__);
-	
-	mutex_unlock(&panel_bl->lock);
-	
-	return ret;
-}
-#endif
 static long panel_core_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 {
 	int ret = 0;
@@ -1300,11 +1211,6 @@ static long panel_core_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg
 		case PANEL_IOC_EVT_VSYNC:
 			//panel_dbg("PANEL:INFO:%s:PANEL_IOC_EVT_VSYNC\n", __func__);
 			break;
-#ifdef CONFIG_SUPPORT_INDISPLAY
-		case PANEL_IOC_SET_FINGER_SET:
-			ret = panel_set_finger_layer(panel, arg);
-			break;
-#endif
 		default:
 			panel_err("PANEL:ERR:%s:undefined command\n", __func__);
 			ret = -EINVAL;
@@ -1371,6 +1277,7 @@ static int panel_drv_set_gpios(struct panel_device *panel)
 			return -EINVAL;
 		}
 		det_val = gpio_get_value(pad->gpio_disp_det);
+
 	}
 	/*
 	 * panel state is decided by rst and disp_det pin
@@ -1606,11 +1513,6 @@ static int panel_parse_lcd_info(struct panel_device *panel)
 	unsigned int dsu_res[MAX_DSU_RES_NUMBER];
 	struct dsu_info_dt *dt_dsu_info = &panel_info->dt_dsu_info;
 #endif
-#ifdef CONFIG_SUPPORT_HDR
-	u32 hdr_num = 0, j;
-	u32 hdr_type[HDR_CAPA_NUM] = {0, };
-	struct lcd_hdr_info *hdr_info = &panel_info->hdr_info;
-#endif
 
 	node = of_parse_phandle(dev->of_node, "ddi_info", 0);
 
@@ -1750,39 +1652,6 @@ static int panel_parse_lcd_info(struct panel_device *panel)
 	}
 
 #endif
-
-#ifdef CONFIG_SUPPORT_HDR
-	/* HDR info */
-	if (hdr_info == NULL) {
-		panel_err("PANEL:ERR:%s:hdr was defined buf hdr_info is null\n",
-			__func__);
-		goto exit_parse;
-	}
-
-	of_property_read_u32(node, "hdr_num", &hdr_num);
-	hdr_info->hdr_num = hdr_num;
-	panel_info("PANEL:INFO:%s:hdr_num(%d)\n", __func__, hdr_num);
-
-	if (hdr_num != 0) {
-		of_property_read_u32_array(node, "hdr_type", hdr_type, hdr_num);
-		for (j = 0; j < hdr_num; j++) {
-			hdr_info->hdr_type[j] = hdr_type[j];
-			panel_info("PANEL:INFO:%s:hdr_type[%d] = %d\n",
-				__func__, j, hdr_info->hdr_type[j]);
-		}
-
-		of_property_read_u32(node, "hdr_max_luma", &hdr_info->hdr_max_luma);
-		of_property_read_u32(node, "hdr_max_avg_luma", &hdr_info->hdr_max_avg_luma);
-		of_property_read_u32(node, "hdr_min_luma", &hdr_info->hdr_min_luma);
-
-		panel_info("PANEL:INFO:%s:hdr_max_luma(%d), hdr_max_avg_luma(%d), hdr_min_luma(%d)\n",
-				__func__, hdr_info->hdr_max_luma, hdr_info->hdr_max_avg_luma,
-				hdr_info->hdr_min_luma);
-
-	}
-exit_parse:
-#endif /* CONFIG_SUPPORT_HDR */
-
 	return ret;
 }
 
@@ -1879,14 +1748,6 @@ static int panel_parse_dt(struct panel_device *panel)
 	return ret;
 }
 
-#ifdef CONFIG_CHECK_SMPL_STATE
-int check_smpl_condition(void)
-{
-	/*Todo: need to implement..*/
-	return 0;
-}
-#endif
-
 void disp_det_handler(struct work_struct *data)
 {
 	int ret, disp_det;
@@ -1898,43 +1759,37 @@ void disp_det_handler(struct work_struct *data)
 	struct host_cb *reset_cb = &panel->reset_cb;
 
 	disp_det = gpio_get_value(pad->gpio_disp_det);
-
 	panel_info("PANEL:INFO:%s: disp_det:%d\n", __func__, disp_det);
 
 	switch (state->cur_state) {
-	case PANEL_STATE_ALPM:
-	case PANEL_STATE_NORMAL:
-		if (disp_det == 0) {
-			disable_irq(pad->irq_disp_det);
+		case PANEL_STATE_ALPM :
+		case PANEL_STATE_NORMAL:
+			if (disp_det == 0) {
+				disable_irq(pad->irq_disp_det);
+				/* delay for disp_det deboundce */
+				usleep_range(200000, 200000);
 
-			/* delay for disp_det deboundce */
-			usleep_range(200000, 210000);
-			panel_err("PANEL:ERR:%s:disp_det is abnormal state\n",
-				__func__);
-			if (reset_cb->cb) {
-#ifdef CONFIG_CHECK_SMPL_STATE
-				ret = reset_cb->cb(reset_cb->data, check_smpl_condition);
-#else
-				ret = reset_cb->cb(reset_cb->data, NULL);
-#endif
-				if (ret)
-					panel_err("PANEL:ERR:%s:failed to reset panel\n",
-						__func__);
-				backlight_update_status(bd);
+				panel_err("PANEL:ERR:%s:disp_det is abnormal state\n",
+					__func__);
+				if (reset_cb->cb) {
+					ret = reset_cb->cb(reset_cb->data);
+					if (ret)
+						panel_err("PANEL:ERR:%s:failed to reset panel\n",
+							__func__);
+					backlight_update_status(bd);
+				}
+				clear_disp_det_pend(panel);
+				enable_irq(pad->irq_disp_det);
 			}
-			clear_disp_det_pend(panel);
-			enable_irq(pad->irq_disp_det);
-		}
-		break;
-	default:
-		break;
+			break;
+		default:
+			break;
 	}
 
 	return;
 }
 
-static int panel_fb_notifier(struct notifier_block *self,
-	unsigned long event, void *data)
+static int panel_fb_notifier(struct notifier_block *self, unsigned long event, void *data)
 {
 	int *blank = NULL;
 	struct panel_device *panel;
@@ -1988,7 +1843,6 @@ static int panel_dpui_notifier_callback(struct notifier_block *self,
 	struct dpui_info *dpui = data;
 	char tbuf[MAX_DPUI_VAL_LEN];
 	u8 panel_datetime[7] = { 0, };
-	u8 panel_coord[4] = { 0, };
 	u8 panel_chip_id[5] = { 0, };
 	int size;
 
@@ -2027,13 +1881,6 @@ static int panel_dpui_notifier_callback(struct notifier_block *self,
 			panel_chip_id[0], panel_chip_id[1], panel_chip_id[2],
 			panel_chip_id[3], panel_chip_id[4]);
 	set_dpui_field(DPUI_KEY_CHIPID, tbuf, size);
-
-	resource_copy_by_name(panel_data, panel_coord, "coordinate");
-	size = snprintf(tbuf, MAX_DPUI_VAL_LEN, "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
-		panel_datetime[0], panel_datetime[1], panel_datetime[2], panel_datetime[3],
-		panel_datetime[4], panel_datetime[5], panel_datetime[6],
-		panel_coord[0], panel_coord[1], panel_coord[2], panel_coord[3]);
-	set_dpui_field(DPUI_KEY_CELLID, tbuf, size);
 
 	return 0;
 }
@@ -2128,7 +1975,7 @@ static struct platform_driver panel_driver = {
 static int __init get_boot_panel_id(char *arg)
 {
 	get_option(&arg, &boot_panel_id);
-	panel_info("PANEL:INFO:%s:boot_panel_id : 0x%x\n",
+	panel_info("PANEL:INFO:%s:boot_panel id : 0x%x\n",
 			__func__, boot_panel_id);
 
 	return 0;

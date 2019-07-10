@@ -140,7 +140,7 @@ static int xhci_plat_probe(struct platform_device *pdev)
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0)
-		return irq;
+		return -ENODEV;
 
 	/* Try to set 64-bit DMA first */
 	if (WARN_ON(!pdev->dev.dma_mask))
@@ -190,9 +190,6 @@ static int xhci_plat_probe(struct platform_device *pdev)
 		ret = clk_prepare_enable(clk);
 		if (ret)
 			goto put_hcd;
-	} else if (PTR_ERR(clk) == -EPROBE_DEFER) {
-		ret = -EPROBE_DEFER;
-		goto put_hcd;
 	}
 
 	if (of_device_is_compatible(pdev->dev.of_node,
@@ -222,6 +219,9 @@ static int xhci_plat_probe(struct platform_device *pdev)
 #ifdef CONFIG_USB_HOST_L1_SUPPORT
 	xhci->quirks |= XHCI_LPM_L1_SUPPORT;
 #endif
+	if (HCC_MAX_PSA(xhci->hcc_params) >= 4)
+		xhci->shared_hcd->can_do_streams = 1;
+
 	hcd->usb_phy = devm_usb_get_phy_by_phandle(&pdev->dev, "usb-phy", 0);
 	if (IS_ERR(hcd->usb_phy)) {
 		ret = PTR_ERR(hcd->usb_phy);
@@ -238,9 +238,6 @@ static int xhci_plat_probe(struct platform_device *pdev)
 	ret = usb_add_hcd(hcd, irq, IRQF_SHARED);
 	if (ret)
 		goto disable_usb_phy;
-
-	if (HCC_MAX_PSA(xhci->hcc_params) >= 4)
-		xhci->shared_hcd->can_do_streams = 1;
 
 	ret = usb_add_hcd(xhci->shared_hcd, irq, IRQF_SHARED);
 	if (ret)
@@ -281,7 +278,6 @@ static int xhci_plat_remove(struct platform_device *dev)
 	struct usb_hcd	*hcd = platform_get_drvdata(dev);
 	struct xhci_hcd	*xhci = hcd_to_xhci(hcd);
 	struct clk *clk = xhci->clk;
-	int timeout = 0;
 
 #if defined(CONFIG_USB_HOST_SAMSUNG_FEATURE)
 	pr_info("%s \n", __func__);
@@ -294,26 +290,9 @@ static int xhci_plat_remove(struct platform_device *dev)
 		pr_info("%s, main_hcd pm_runtime_forbid\n", __func__);
 		pm_runtime_forbid(&xhci->main_hcd->self.root_hub->dev);
 	}
-#endif
-	/*
-	 * Sometimes deadlock occurred in this function.
-	 * So, below waiting for completion of hub_event was added.
-	 */
-	while (xhci->shared_hcd->is_in_hub_event || hcd->is_in_hub_event) {
-		msleep(10);
-		timeout += 10;
-		if (timeout >= XHCI_HUB_EVENT_TIMEOUT) {
-			xhci_err(xhci,
-				"ERROR: hub_event completion timeout\n");
-			break;
-		}
-	}
 
-#if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
 	manager_notifier_unregister(&xhci->ccic_xhci_nb);
 #endif
-
-	xhci->xhc_state |= XHCI_STATE_REMOVING;
 	usb_remove_hcd(xhci->shared_hcd);
 	usb_phy_shutdown(hcd->usb_phy);
 
@@ -327,6 +306,7 @@ static int xhci_plat_remove(struct platform_device *dev)
 		hcd->phy = NULL;
 
 	usb_remove_hcd(hcd);
+	xhci->xhci_alloc->offset=0;
 	usb_put_hcd(xhci->shared_hcd);
 
 	if (!IS_ERR(clk))
@@ -392,7 +372,6 @@ MODULE_DEVICE_TABLE(acpi, usb_xhci_acpi_match);
 static struct platform_driver usb_xhci_driver = {
 	.probe	= xhci_plat_probe,
 	.remove	= xhci_plat_remove,
-	.shutdown	= usb_hcd_platform_shutdown,
 	.driver	= {
 		.name = "xhci-hcd",
 		.pm = DEV_PM_OPS,

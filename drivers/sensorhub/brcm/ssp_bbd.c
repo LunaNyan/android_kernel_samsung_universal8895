@@ -20,27 +20,21 @@ bool ssp_dbg;
 bool ssp_pkt_dbg;
 
 #define dprint(fmt, args...) \
-	do { \
-		if (unlikely(ssp_dbg)) \
-			pr_debug("[SSPBBD]:(%s:%d): " fmt, \
-			__func__, __LINE__, ##args); \
-	} while (0)
+	if (unlikely(ssp_dbg)) \
+		pr_debug("[SSPBBD]:(%s:%d): " fmt, \
+		__func__, __LINE__, ##args)
 
 #define DEBUG_SHOW_HEX_SEND(msg, len) \
-	do { \
-		if (unlikely(ssp_pkt_dbg)) { \
-			print_hex_dump(KERN_INFO, "SSP->MCU: ", \
-			DUMP_PREFIX_NONE, 16, 1, (msg), (len), true); \
-		} \
-	} while (0)
+	if (unlikely(ssp_pkt_dbg)) { \
+		print_hex_dump(KERN_INFO, "SSP->MCU: ", \
+		DUMP_PREFIX_NONE, 16, 1, (msg), (len), true); \
+	}
 
 #define DEBUG_SHOW_HEX_RECV(msg, len) \
-	do { \
-		if (unlikely(ssp_pkt_dbg)) {\
-			print_hex_dump(KERN_INFO, "SSP<-MCU: ", \
-			DUMP_PREFIX_NONE, 16, 1, (msg), (len), true); \
-		} \
-	} while (0)
+	if (unlikely(ssp_pkt_dbg)) {\
+		print_hex_dump(KERN_INFO, "SSP<-MCU: ", \
+		DUMP_PREFIX_NONE, 16, 1, (msg), (len), true); \
+	}
 
 enum packet_state_e {
 	WAITFOR_PKT_HEADER = 0,
@@ -91,8 +85,9 @@ int bbd_do_transfer(struct ssp_data *data, struct ssp_msg *msg,
 
 	mutex_lock(&data->comm_mutex);
 
-	if (timeout)
+	if (timeout) {
 		wake_lock(&data->ssp_comm_wake_lock);
+	}
 
 	ssp_down = data->bSspShutdown;
 
@@ -100,9 +95,9 @@ int bbd_do_transfer(struct ssp_data *data, struct ssp_msg *msg,
 		pr_err("[SSPBBD]: ssp_down == true. returning\n");
 		clean_msg(msg);
 		mdelay(5);
-		if (timeout)
+		if (timeout) {
 			wake_unlock(&data->ssp_comm_wake_lock);
-
+		}
 		mutex_unlock(&data->comm_mutex);
 		return -1;
 	}
@@ -114,22 +109,20 @@ int bbd_do_transfer(struct ssp_data *data, struct ssp_msg *msg,
 
 	mutex_lock(&data->pending_mutex);
 
-	if ((ssp_msg_type != AP2HUB_WRITE || ssp_packet_size <= MAX_SSP_PACKET_SIZE)
-			&& bbd_send_packet((unsigned char *)msg, 9) > 0) {
+	if ((ssp_msg_type != AP2HUB_WRITE || ssp_packet_size <= MAX_SSP_PACKET_SIZE) && bbd_send_packet((unsigned char *)msg, 9) > 0) {
 		status = 1;
-		DEBUG_SHOW_HEX_SEND(msg, 9);
+		DEBUG_SHOW_HEX_SEND(msg, 9)
 	} else {
 		pr_err("[SSP]: %s bbd_send_packet fail!!\n", __func__);
 		if (ssp_packet_size <= MAX_SSP_PACKET_SIZE)
 			data->uTimeOutCnt++;
 		else
-			pr_err("[SSPBBD]: packet size of ssp must be less than %d, but %d\n",
-					MAX_SSP_PACKET_SIZE, (int)msg->length);
+			pr_err("[SSPBBD]: packet size of ssp must be less than %d, but %d\n", MAX_SSP_PACKET_SIZE, (int)msg->length);
 		clean_msg(msg);
 		mutex_unlock(&data->pending_mutex);
-		if (timeout)
+		if (timeout) {
 			wake_unlock(&data->ssp_comm_wake_lock);
-
+		}
 		mutex_unlock(&data->comm_mutex);
 		return -1;
 	}
@@ -148,22 +141,18 @@ int bbd_do_transfer(struct ssp_data *data, struct ssp_msg *msg,
 		dprint("waiting completion ...\n");
 		if (wait_for_completion_timeout(done,
 				msecs_to_jiffies(timeout)) == 0) {
-
 			pr_err("[SSPBBD] %s(): completion is timeout!\n",
 				__func__);
 
-			if (data->regulator_vdd_mcu_1p8 != NULL) {
-				pr_err("[SSPBBD] %s(): state of mcu power(%d)\n", __func__,
-						regulator_is_enabled(data->regulator_vdd_mcu_1p8));
-			} else if (data->shub_en >= 0) {
-				pr_err("[SSPBBD] %s: shub_en(%d), is enabled %d\n", __func__,
-						data->shub_en, gpio_get_value(data->shub_en));
-			}
+            if(data->regulator_vdd_mcu_1p8 != NULL){
+                pr_err("[SSPBBD] %s(): state of mcu power(%d)\n", __func__, regulator_is_enabled(data->regulator_vdd_mcu_1p8));
+            }            else if(data->shub_en >= 0){
+                pr_err("[SSPBBD] %s: shub_en(%d), is enabled %d\n", __func__, data->shub_en, gpio_get_value(data->shub_en));
+            }
 
 			bcm4773_debug_info();
 
 			status = -2;
-
 			mutex_lock(&data->pending_mutex);
 			if (!use_no_irq && !msg_dead) {
 				if ((msg->list.next != NULL) &&
@@ -191,18 +180,10 @@ int bbd_do_transfer(struct ssp_data *data, struct ssp_msg *msg,
 	if (use_no_irq)
 		clean_msg(msg);
 
-	if (timeout)
+	if (timeout) {
 		wake_unlock(&data->ssp_comm_wake_lock);
-
-	mutex_unlock(&data->comm_mutex);
-
-	if (status == -2) {
-		u64 current_timestamp = get_current_timestamp();
-
-		pr_err("[SSPBBD] %s(): queue work to sensorhub reset(%lld, %lld)\n",
-				__func__, data->resumeTimestamp, current_timestamp);
-		schedule_delayed_work(&data->work_ssp_reset, msecs_to_jiffies(100));
 	}
+	mutex_unlock(&data->comm_mutex);
 
 	return status;
 }
@@ -271,11 +252,8 @@ int callback_bbd_on_mcu_ready(void *ssh_data, bool ready)
 	if (ready == true) {
 		/* Start queue work for initializing MCU */
 		data->bFirstRef == true ? data->bFirstRef = false : data->uResetCnt++;
-		if (data->IsGpsWorking)
-			data->resetCntGPSisOn++;
 		memset(&ssp_pkt, 0, sizeof(ssp_pkt));
 		ssp_pkt.required = 4;
-		wake_lock_timeout(&data->ssp_wake_lock, HZ);
 		queue_work(data->bbd_mcu_ready_wq, &data->work_bbd_mcu_ready);
 	} else {
 		/* Disable SSP */
@@ -297,22 +275,15 @@ int callback_bbd_on_mcu_ready(void *ssh_data, bool ready)
  */
 int callback_bbd_on_control(void *ssh_data, const char *str_ctrl)
 {
-	struct ssp_data *data = (struct ssp_data *)ssh_data;
+    struct ssp_data *data = (struct ssp_data *)ssh_data;
 
 	if (!ssh_data || !str_ctrl)
 		return -1;
 
-	if (strstr(str_ctrl, ESW_CTRL_CRASHED)) {
-		data->IsMcuCrashed = true;
+    if (strstr(str_ctrl, ESW_CTRL_CRASHED)){
+        data->IsMcuCrashed = true;
 		data->mcuCrashedCnt++;
-	} else if (strstr(str_ctrl, BBD_CTRL_GPS_OFF) || strstr(str_ctrl, BBD_CTRL_GPS_ON)) {
-		data->IsGpsWorking = (strstr(str_ctrl, "CORE_OFF") ? 0 : 1);
-	} else if (strstr(str_ctrl, BBD_CTRL_LHD_STOP)) {
-		int prefixLen = (int)strlen(BBD_CTRL_LHD_STOP) + 1; //puls one is for blank ex) "LHD:STOP "
-		int totalLen = (int)strlen(str_ctrl);
-
-		memcpy(data->resetInfo, str_ctrl + prefixLen, totalLen - prefixLen);
-	}
+    }
 	dprint("Received string command from LHD(=%s)\n", str_ctrl);
 
 	return 0;
@@ -330,9 +301,10 @@ int callback_bbd_on_mcu_reset(void *ssh_data)
 	struct ssp_data *data = (struct ssp_data *)ssh_data;
 
 	if (!data)
-		return -1;
-	data->resetting = true;
-	//data->uResetCnt++;
+	    return -1;
+    else
+        data->resetting = true;
+    //data->uResetCnt++;
 
 	return 0;
 }
@@ -360,14 +332,15 @@ void bbd_mcu_ready_work_func(struct work_struct *work)
 	int retries = 0;
 
 
-	if (data->vdd_mcu_1p8_name != NULL) {
+	if(data->vdd_mcu_1p8_name != NULL){
 		//clean_pending_list(data);
 		ret = wait_for_completion_timeout(&data->hub_data->mcu_init_done, COMPLETION_TIMEOUT);
-		if (unlikely(!ret))
+		if (unlikely(!ret)) {
 			pr_err("[SSPBBD] Sensors of MCU are not ready!\n");
-		else
+		} else
 			pr_err("[SSPBBD] Sensors of MCU are ready!\n");
-	} else
+	}
+	else
 		msleep(1000); //this model doesn't vdd divided
 
 	dprint("MCU is ready.(work_queue)\n");
@@ -401,7 +374,7 @@ retries:
 	if (data->uLastResumeState != 0)
 		ssp_send_cmd(data, data->uLastResumeState, 0);
 
-	data->resetting = false;
+    data->resetting = false;
 }
 
 /**
@@ -443,7 +416,7 @@ void bbd_on_packet_work_func(struct work_struct *work)
 	q = rBuff + iRet;/* q points end of currently received data bytes */
 
 process_one:
-	DEBUG_SHOW_HEX_RECV(p, 4);
+	DEBUG_SHOW_HEX_RECV(p, 4)
 
 	memcpy(&msg_options, p, 2); p += 2;
 	msg_type = msg_options & SSP_SPI_MASK;
@@ -500,7 +473,7 @@ process_one:
 			}
 			if (msg_type == AP2HUB_READ) {
 				if (nDataLen <= 0) {
-					dprint("Waiting 2nd message...(msg=%pK, length=%d)\n",
+					dprint("Waiting 2nd message...(msg=%p, length=%d)\n",
 						msg, msg->length);
 					iRet = bbd_pull_packet(msg->buffer, msg->length,
 								BBD_PULL_TIMEOUT);
@@ -509,7 +482,7 @@ process_one:
 					memcpy(msg->buffer, pData, msg->length);
 					nDataLen -= msg->length;
 				}
-				DEBUG_SHOW_HEX_RECV(msg->buffer, msg->length);
+				DEBUG_SHOW_HEX_RECV(msg->buffer, msg->length)
 			}
 			if (msg_type == AP2HUB_WRITE) {
 				iRet = bbd_send_packet(msg->buffer, msg->length);
@@ -519,7 +492,7 @@ process_one:
 					goto exit;
 				}
 
-				DEBUG_SHOW_HEX_SEND(msg->buffer, msg->length);
+				DEBUG_SHOW_HEX_SEND(msg->buffer, msg->length)
 
 				if (msg_options & AP2HUB_RETURN) {
 					msg->options = AP2HUB_READ | AP2HUB_RETURN;
@@ -558,7 +531,7 @@ exit:
 			memcpy(buffer, pData, chLength);
 			iRet = chLength;
 		}
-		DEBUG_SHOW_HEX_RECV(buffer, chLength);
+		DEBUG_SHOW_HEX_RECV(buffer, chLength)
 		if (iRet < 0)
 			pr_err("[SSP] %s bbd_pull_packet fail.(iRet=%d)\n", __func__, iRet);
 		else {
@@ -574,8 +547,9 @@ exit:
 		break;
 	}
 
-	if (iRet < 0)
+	if (iRet < 0) {
 		pr_err("[SSP]: %s - MSG2SSP_SSD error %d\n", __func__, iRet);
+	}
 
 	if (p < q)
 		goto process_one;
@@ -586,17 +560,21 @@ do { \
 	ssp_pkt.rxlen = 0; \
 	ssp_pkt.required = 4; \
 	ssp_pkt.state = WAITFOR_PKT_HEADER; \
-} while (0)
+} while(0)
 
 static inline struct ssp_msg *bbd_find_ssp_msg(struct ssp_data *data)
 {
 	struct ssp_msg *msg, *n;
 	bool found = false;
 
+	if (ssp_pkt.islocked) {
+		pr_err("[SSP] %s() mismatch pending_mutex\n", __func__);
+		mutex_unlock(&data->pending_mutex);
+	}
 	mutex_lock(&data->pending_mutex);
+	ssp_pkt.islocked = true;
 	if (list_empty(&data->pending_list)) {
 		pr_err("[SSP] list empty error!\n");
-	    mutex_unlock(&data->pending_mutex);
 		goto errexit;
 	}
 
@@ -607,8 +585,6 @@ static inline struct ssp_msg *bbd_find_ssp_msg(struct ssp_data *data)
 			break;
 		}
 	}
-	mutex_unlock(&data->pending_mutex);
-
 	if (!found) {
 		pr_err("[SSP] %s %d - Not match error\n", __func__, ssp_pkt.opts);
 		goto errexit;
@@ -622,18 +598,21 @@ static inline struct ssp_msg *bbd_find_ssp_msg(struct ssp_data *data)
 	if (msg->buffer == NULL) {
 		pr_err("[SSPBBD]: %s() : msg->buffer is NULL\n", __func__);
 		goto errexit;
-	} else if (msg->length <= 0) {
+	} else if(msg->length <= 0) {
 		pr_err("[SSPBBD]: %s() : msg->length is less than 0\n", __func__);
 		goto errexit;
 	}
 	return msg;
 
 errexit:
+	ssp_pkt.islocked = false;
+    mutex_unlock(&data->pending_mutex);
+
 	pr_err("[SSPBBD] %s opts:%d, state:%d, type:%d\n", __func__,
-			ssp_pkt.opts, ssp_pkt.state, ssp_pkt.type);
-	print_hex_dump(KERN_INFO, "[SSPBBD]: ",
-			DUMP_PREFIX_NONE, 16, 1, ssp_pkt.buf, 4, true);
-	reset_ssp_pkt();
+            ssp_pkt.opts, ssp_pkt.state, ssp_pkt.type);
+    print_hex_dump(KERN_INFO, "[SSPBBD]: ",
+            DUMP_PREFIX_NONE, 16, 1, ssp_pkt.buf, 4, true);
+    reset_ssp_pkt();
 
 	return NULL;
 }
@@ -657,7 +636,6 @@ static inline void bbd_send_timestamp(void)
 		struct timespec curr_ts = ktime_to_timespec(ktime_get_boottime());
 		s64 timestamp = timespec_to_ns(&curr_ts);
 
-		memset(&msg, 0, sizeof(struct ssp_msg));
 		msg.cmd = MSG2SSP_INST_CURRENT_TIMESTAMP; //you should modify this to proper command
 		msg.options = AP2HUB_WRITE;
 		msg.length = sizeof(s64);
@@ -676,35 +654,34 @@ int callback_bbd_on_packet(void *ssh_data, const char *buf, size_t size)
 {
 	struct ssp_data *data = (struct ssp_data *)ssh_data;
 	/*
-	 *static char *str_state[] = {
-	 *        "WAITFOR_PKT_HEADER",
-	 *        "WAITFOR_PKT_COMPLETE"
-	 *};
-	 */
+	static char *str_state[] = {
+	       	"WAITFOR_PKT_HEADER",
+		"WAITFOR_PKT_COMPLETE"
+	};
+	*/
 
 	int idx = 0;
 	struct ssp_msg *msg;
 
-	   /*
-	    *printk("%s() sensor time delta:%lld\n", __func__,
-	    *             get_sensor_time_delta_us());
-	    */
+	/*
+	   printk("%s() sensor time delta:%lld\n", __func__,
+		       	get_sensor_time_delta_us());
+	 */
 	while (idx < size) {
 		s32 remain = size - idx;
 		s32 required = 0;
 
 		/*
-		 *printk("[SSPBBD] %s rxlen:%d, required:%d, remain:%d\n",
-		 *        str_state[ssp_pkt.state], ssp_pkt.rxlen,
-		 *        ssp_pkt.required, remain);
-		 */
-
-		required = (remain < ssp_pkt.required) ?
-				remain : ssp_pkt.required;
+		printk("[SSPBBD] %s rxlen:%d, required:%d, remain:%d\n",
+		       	str_state[ssp_pkt.state], ssp_pkt.rxlen,
+		       	ssp_pkt.required, remain);
+		*/
+		required = (remain < ssp_pkt.required)?
+		      		remain : ssp_pkt.required;
 
 		//BUG_ON(ssp_pkt.rxlen + required >= MAX_SSP_DATA_SIZE);
-		if (ssp_pkt.rxlen + required >= MAX_SSP_DATA_SIZE)
-			return -1;
+        if(ssp_pkt.rxlen + required >= MAX_SSP_DATA_SIZE)
+            return -1;
 
 		memcpy(&ssp_pkt.buf[ssp_pkt.rxlen], buf + idx, required);
 		ssp_pkt.rxlen += required;
@@ -718,15 +695,14 @@ int callback_bbd_on_packet(void *ssh_data, const char *buf, size_t size)
 		switch (ssp_pkt.state) {
 		case WAITFOR_PKT_HEADER:
 			/* header completed */
-			DEBUG_SHOW_HEX_RECV(ssp_pkt.buf, 4);
+			DEBUG_SHOW_HEX_RECV(ssp_pkt.buf, 4)
 			memcpy(&ssp_pkt.opts, ssp_pkt.buf, 2);
 			ssp_pkt.type = ssp_pkt.opts & SSP_SPI_MASK;
 
 			switch (ssp_pkt.type) {
 			case AP2HUB_READ:
-				msg = bbd_find_ssp_msg(data);
-				if (!msg)
-					return -1;
+				if (!(msg = bbd_find_ssp_msg(data)))
+                    return -1;
 
 				ssp_pkt.state = WAITFOR_PKT_COMPLETE;
 				ssp_pkt.msg = msg;
@@ -739,36 +715,36 @@ int callback_bbd_on_packet(void *ssh_data, const char *buf, size_t size)
 					bbd_send_timestamp();
 				break;
 			case AP2HUB_WRITE:
-				msg = bbd_find_ssp_msg(data);
-				if (!msg)
-					return -1;
+				if (!(msg = bbd_find_ssp_msg(data)))
+                    return -1;
 
 				reset_ssp_pkt();
 				if (bbd_send_packet(msg->buffer, msg->length) < 0) {
-					pr_err("[SSP]: %s bbd_send_packet failed(AP2HUB_WRITE)\n", __func__);
-                    break;
+					pr_err("[SSP]: %s bbd_send_packet failed"
+						"(AP2HUB_WRITE)\n", __func__);
+					goto unlock;
 				}
-				DEBUG_SHOW_HEX_SEND(msg->buffer, msg->length);
-                mutex_lock(&data->pending_mutex);
+				DEBUG_SHOW_HEX_SEND(msg->buffer, msg->length)
 				if (ssp_pkt.opts & AP2HUB_RETURN) {
 					msg->options = AP2HUB_READ | AP2HUB_RETURN;
 					msg->length = 1;
-					list_add_tail(&msg->list, &data->pending_list);
+					list_add_tail(&msg->list,
+						&data->pending_list);
+					goto unlock;
 				}
-                else
-                {
-				    bbd_complete_ssp_msg(data, msg);
-                }
-                mutex_unlock(&data->pending_mutex);
+				bbd_complete_ssp_msg(data, msg);
+unlock:
+				ssp_pkt.islocked = false;
+				mutex_unlock(&data->pending_mutex);
 				break;
 			default:
 				pr_err("[SSP]No type error(%d)\n", ssp_pkt.type);
-				print_hex_dump(KERN_INFO, "[SSP] : ",
-						DUMP_PREFIX_NONE, 16, 1, ssp_pkt.buf, 4, true);
-				reset_ssp_pkt();
-				return -1;
+                print_hex_dump(KERN_INFO, "[SSP] : ",
+                        DUMP_PREFIX_NONE, 16, 1, ssp_pkt.buf, 4, true);
+			    reset_ssp_pkt();
+                return -1;
 			}
-			ssp_pkt.rxlen = 0;
+		    ssp_pkt.rxlen = 0;
 			break;
 		case WAITFOR_PKT_COMPLETE:
 			/* packet completed!! */
@@ -776,18 +752,16 @@ int callback_bbd_on_packet(void *ssh_data, const char *buf, size_t size)
 			case AP2HUB_READ:
 				//BUG_ON(ssp_pkt.msg == NULL);
 				//BUG_ON(ssp_pkt.rxlen != ssp_pkt.msg->length);
-				if (ssp_pkt.msg != NULL) {
-                    mutex_lock(&data->pending_mutex);
-
-					memcpy(ssp_pkt.msg->buffer, ssp_pkt.buf, ssp_pkt.rxlen);
-					bbd_complete_ssp_msg(data, ssp_pkt.msg);
-
-                    mutex_unlock(&data->pending_mutex);
-					ssp_pkt.msg = NULL;
-				}
+                if (ssp_pkt.msg != NULL) {
+                    memcpy(ssp_pkt.msg->buffer, ssp_pkt.buf,ssp_pkt.rxlen);
+                    bbd_complete_ssp_msg(data, ssp_pkt.msg);
+                    ssp_pkt.msg = NULL;
+                }
+                ssp_pkt.islocked = false;
+				mutex_unlock(&data->pending_mutex);
 				break;
 			case HUB2AP_WRITE:
-				DEBUG_SHOW_HEX_RECV(ssp_pkt.buf, ssp_pkt.rxlen);
+				DEBUG_SHOW_HEX_RECV(ssp_pkt.buf, ssp_pkt.rxlen)
 				data->timestamp = get_current_timestamp();
 				parse_dataframe(data, ssp_pkt.buf, ssp_pkt.rxlen);
 				break;
@@ -801,3 +775,4 @@ int callback_bbd_on_packet(void *ssh_data, const char *buf, size_t size)
 	}
 	return 0;
 }
+

@@ -41,13 +41,6 @@ struct exynos_irq_chip {
 	u32 eint_pend;
 };
 
-static unsigned int smpl_irq;
-
-unsigned int get_smpl_irq_num(void)
-{
-	return smpl_irq;
-}
-
 static inline struct exynos_irq_chip *to_exynos_irq_chip(struct irq_chip *chip)
 {
 	return container_of(chip, struct exynos_irq_chip, chip);
@@ -85,10 +78,6 @@ static void exynos_irq_mask(struct irq_data *irqd)
 	unsigned long mask;
 	unsigned long flags;
 
-#ifdef CONFIG_SOC_EXYNOS8895
-	if (!strncmp(bank->name, "gpb1", 4) && (irqd->hwirq == 3))
-		return;
-#endif
 	spin_lock_irqsave(&bank->slock, flags);
 
 	mask = readl(d->virt_base + reg_mask);
@@ -217,6 +206,8 @@ static int exynos_irq_request_resources(struct irq_data *irqd)
 
 	spin_unlock_irqrestore(&bank->slock, flags);
 
+	exynos_irq_unmask(irqd);
+
 	return 0;
 }
 
@@ -236,6 +227,8 @@ static void exynos_irq_release_resources(struct irq_data *irqd)
 	reg_con = bank->pctl_offset + bank_type->reg_offset[PINCFG_TYPE_FUNC];
 	shift = irqd->hwirq * bank_type->fld_width[PINCFG_TYPE_FUNC];
 	mask = (1 << bank_type->fld_width[PINCFG_TYPE_FUNC]) - 1;
+
+	exynos_irq_mask(irqd);
 
 	spin_lock_irqsave(&bank->slock, flags);
 
@@ -390,10 +383,6 @@ static int exynos_eint_gpio_init(struct samsung_pinctrl_drv_data *d)
 		/* Setting Digital Filter */
 		exynos_eint_flt_config(EXYNOS_EINT_FLTCON_EN,
 					EXYNOS_EINT_FLTCON_SEL, 0, d, bank);
-#ifdef CONFIG_SOC_EXYNOS8895
-		if (!strncmp(bank->name, "gpb1", 4))
-			smpl_irq = d->irq;
-#endif
 	}
 
 	return 0;

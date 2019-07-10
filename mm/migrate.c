@@ -519,7 +519,6 @@ int migrate_page_move_mapping(struct address_space *mapping,
 
 	return MIGRATEPAGE_SUCCESS;
 }
-EXPORT_SYMBOL(migrate_page_move_mapping);
 
 /*
  * The expected number of remaining references is the same as that
@@ -670,7 +669,6 @@ void migrate_page_copy(struct page *newpage, struct page *page)
 	if (PageWriteback(newpage))
 		end_page_writeback(newpage);
 }
-EXPORT_SYMBOL(migrate_page_copy);
 
 /************************************************************
  *                    Migration functions
@@ -1318,15 +1316,6 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 				rc = unmap_and_move(get_new_page, put_new_page,
 						private, page, pass > 2, mode,
 						reason);
-
-			if ((reason == MR_CMA) && (rc != -EAGAIN) &&
-						(rc != MIGRATEPAGE_SUCCESS)) {
-				phys_addr_t pa = page_to_phys(page);
-
-				pr_err("%s failed(%d): PA%pa,mapcnt%d,cnt%d\n",
-					__func__, rc, &pa,
-					page_mapcount(page), page_count(page));
-			}
 
 			switch(rc) {
 			case -ENOMEM:

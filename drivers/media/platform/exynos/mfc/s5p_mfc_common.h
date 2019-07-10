@@ -19,7 +19,7 @@
 #include "exynos_mfc_media.h"
 #include "s5p_mfc_data_struct.h"
 
-#define MFC_DRIVER_INFO		180315
+#define MFC_DRIVER_INFO		161116
 
 #define MFC_MAX_REF_BUFS	2
 #define MFC_FRAME_PLANES	2
@@ -113,8 +113,7 @@
 #define IS_HEVC_ENC(ctx)	((ctx)->codec_mode == S5P_FIMV_CODEC_HEVC_ENC)
 #define IS_VP9_ENC(ctx)		((ctx)->codec_mode == S5P_FIMV_CODEC_VP9_ENC)
 
-#define CODEC_NOT_CODED(ctx)	(IS_MPEG4_DEC(ctx) || IS_VC1_DEC(ctx) ||	\
-				IS_VC1_RCV_DEC(ctx) || IS_VP9_DEC(ctx))
+#define CODEC_NOT_CODED(ctx)	(IS_MPEG4_DEC(ctx) || IS_VC1_DEC(ctx) || IS_VC1_RCV_DEC(ctx))
 #define CODEC_INTERLACED(ctx)	(IS_H264_DEC(ctx) || IS_H264_MVC_DEC(ctx) ||	\
 				IS_MPEG2_DEC(ctx) || IS_MPEG4_DEC(ctx) ||	\
 				IS_VC1_DEC(ctx) || IS_VC1_RCV_DEC(ctx))
@@ -137,8 +136,6 @@
 #define	DEC_SET_LAST_FRAME_INFO		(1 << 2)
 #define	DEC_SET_SKYPE_FLAG		(1 << 3)
 
-#define IS_SUPER64_BFRAME(ctx, size, type)	((ctx->is_10bit) && (size >= 2) && (type == 3))
-
 /* Extra information for Encoder */
 #define	ENC_SET_RGB_INPUT		(1 << 0)
 #define	ENC_SET_SPARE_SIZE		(1 << 1)
@@ -148,7 +145,6 @@
 #define	ENC_SET_QP_BOUND_PB		(1 << 5)
 #define	ENC_SET_FIXED_SLICE		(1 << 6)
 #define	ENC_SET_PVC_MODE		(1 << 7)
-#define	ENC_SET_RATIO_OF_INTRA		(1 << 8)
 
 #define MFC_VER_MAJOR(dev)	((s5p_mfc_version(dev) >> 8) & 0xFF)
 #define MFC_VER_MINOR(dev)	(s5p_mfc_version(dev) & 0xFF)
@@ -174,8 +170,6 @@
 					(dev->fw.date >= 0x160415))
 #define FW_HAS_BLACK_BAR_DETECT(dev)	(IS_MFCV11X(dev) &&		\
 					(dev->fw.date >= 0x161017))
-#define FW_HAS_RATIO_INTRA_CTRL(dev)	(IS_MFCV11X(dev) &&		\
-					(dev->fw.date >= 0x171113))
 
 static inline unsigned int s5p_mfc_version(struct s5p_mfc_dev *dev)
 {

@@ -26,7 +26,7 @@ extern struct pm_qos_request exynos_isp_qos_mem;
 extern struct pm_qos_request exynos_isp_qos_cam;
 extern struct pm_qos_request exynos_isp_qos_hpg;
 
-int fimc_is_get_start_sensor_cnt(struct fimc_is_core *core)
+static inline int fimc_is_get_start_sensor_cnt(struct fimc_is_core *core)
 {
 	int i, sensor_cnt = 0;
 
@@ -37,7 +37,19 @@ int fimc_is_get_start_sensor_cnt(struct fimc_is_core *core)
 	return sensor_cnt;
 }
 
-int fimc_is_get_target_resol(struct fimc_is_device_ischain *device)
+static inline unsigned long fimc_is_get_sensor_map(struct fimc_is_core *core)
+{
+	int i;
+	unsigned long sensor_map = 0;
+
+	for (i = 0; i < FIMC_IS_SENSOR_COUNT; i++)
+		if (test_bit(FIMC_IS_SENSOR_OPEN, &(core->sensor[i].state)))
+			set_bit(core->sensor[i].position, &sensor_map);
+
+	return sensor_map;
+}
+
+static int fimc_is_get_target_resol(struct fimc_is_device_ischain *device)
 {
 	int resol = 0;
 #ifdef SOC_MCS
@@ -158,7 +170,6 @@ int fimc_is_dvfs_sel_static(struct fimc_is_device_ischain *device)
 	struct fimc_is_dvfs_scenario_ctrl *static_ctrl;
 	struct fimc_is_dvfs_scenario *scenarios;
 	struct fimc_is_resourcemgr *resourcemgr;
-	struct fimc_is_dual_info *dual_info;
 	int i, scenario_id, scenario_cnt;
 	int position, resol, fps, stream_cnt;
 	unsigned long sensor_map;
@@ -193,8 +204,7 @@ int fimc_is_dvfs_sel_static(struct fimc_is_device_ischain *device)
 	resol = fimc_is_get_target_resol(device);
 	fps = fimc_is_sensor_g_framerate(device->sensor);
 	stream_cnt = fimc_is_get_start_sensor_cnt(core);
-	sensor_map = core->sensor_map;
-	dual_info = &core->dual_info;
+	sensor_map = fimc_is_get_sensor_map(core);
 
 	for (i = 0; i < scenario_cnt; i++) {
 		if (!scenarios[i].check_func) {
@@ -202,8 +212,7 @@ int fimc_is_dvfs_sel_static(struct fimc_is_device_ischain *device)
 			continue;
 		}
 
-		if ((scenarios[i].check_func(device, NULL, position, resol, fps,
-			stream_cnt, sensor_map, dual_info)) > 0) {
+		if ((scenarios[i].check_func(device, NULL, position, resol, fps, stream_cnt, sensor_map)) > 0) {
 			scenario_id = scenarios[i].scenario_id;
 			static_ctrl->cur_scenario_id = scenario_id;
 			static_ctrl->cur_scenario_idx = i;
@@ -232,7 +241,6 @@ int fimc_is_dvfs_sel_dynamic(struct fimc_is_device_ischain *device, struct fimc_
 	struct fimc_is_dvfs_scenario_ctrl *dynamic_ctrl;
 	struct fimc_is_dvfs_scenario *scenarios;
 	struct fimc_is_resourcemgr *resourcemgr;
-	struct fimc_is_dual_info *dual_info;
 	int i, scenario_id, scenario_cnt;
 	int position, resol, fps;
 	unsigned long sensor_map;
@@ -282,8 +290,7 @@ int fimc_is_dvfs_sel_dynamic(struct fimc_is_device_ischain *device, struct fimc_
 	position = fimc_is_sensor_g_position(device->sensor);
 	resol = fimc_is_get_target_resol(device);
 	fps = fimc_is_sensor_g_framerate(device->sensor);
-	sensor_map = core->sensor_map;
-	dual_info = &core->dual_info;
+	sensor_map = fimc_is_get_sensor_map(core);
 
 	for (i = 0; i < scenario_cnt; i++) {
 		if (!scenarios[i].check_func) {
@@ -291,7 +298,7 @@ int fimc_is_dvfs_sel_dynamic(struct fimc_is_device_ischain *device, struct fimc_
 			continue;
 		}
 
-		ret = scenarios[i].check_func(device, group, position, resol, fps, 0, sensor_map, dual_info);
+		ret = scenarios[i].check_func(device, group, position, resol, fps, 0, sensor_map);
 		switch (ret) {
 		case DVFS_MATCHED:
 			scenario_id = scenarios[i].scenario_id;
@@ -319,7 +326,6 @@ int fimc_is_dvfs_sel_external(struct fimc_is_device_sensor *device)
 	struct fimc_is_dvfs_scenario_ctrl *external_ctrl;
 	struct fimc_is_dvfs_scenario *scenarios;
 	struct fimc_is_resourcemgr *resourcemgr;
-	struct fimc_is_dual_info *dual_info;
 	int i, scenario_id, scenario_cnt;
 	int position, resol, fps, stream_cnt;
 	unsigned long sensor_map;
@@ -348,8 +354,7 @@ int fimc_is_dvfs_sel_external(struct fimc_is_device_sensor *device)
 	resol = fimc_is_sensor_g_width(device) * fimc_is_sensor_g_height(device);
 	fps = fimc_is_sensor_g_framerate(device);
 	stream_cnt = fimc_is_get_start_sensor_cnt(core);
-	sensor_map = core->sensor_map;
-	dual_info = &core->dual_info;
+	sensor_map = fimc_is_get_sensor_map(core);
 
 	for (i = 0; i < scenario_cnt; i++) {
 		if (!scenarios[i].ext_check_func) {
@@ -357,8 +362,7 @@ int fimc_is_dvfs_sel_external(struct fimc_is_device_sensor *device)
 			continue;
 		}
 
-		if ((scenarios[i].ext_check_func(device, position, resol, fps,
-			stream_cnt, sensor_map, dual_info)) > 0) {
+		if ((scenarios[i].ext_check_func(device, position, resol, fps, stream_cnt, sensor_map)) > 0) {
 			scenario_id = scenarios[i].scenario_id;
 			external_ctrl->cur_scenario_id = scenario_id;
 			external_ctrl->cur_scenario_idx = i;

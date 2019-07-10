@@ -61,12 +61,10 @@ static u8 POC_PGM_ENABLE[] = { 0xC0, 0x02 };
 static u8 POC_PGM_DISABLE[] = { 0xC0, 0x00 };
 static u8 POC_EXECUTE[] = { 0xC0, 0x03 };
 static u8 POC_WR_ENABLE[] = { 0xC1, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, BDIV };
-#if defined(CONFIG_POC_DREAM)
+#ifdef CONFIG_POC_DREAM
 static u8 POC_QD_ENABLE[] = { 0xC1, 0x00, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10 };
-#elif defined(CONFIG_POC_DREAM2)
-static u8 POC_QD_ENABLE[] = { 0xC1, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x10 };
 #else
-static u8 POC_QD_ENABLE[] = { 0xC1, 0x00, 0x01, 0x40, 0x02, 0x00, 0x00, 0x00, 0x00, 0x10 };
+static u8 POC_QD_ENABLE[] = { 0xC1, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x10 };
 #endif
 static u8 POC_WR_STT[] = { 0xC1, 0x00, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, BDIV };
 static u8 POC_WR_END[] = { 0xC1, 0x00, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, BDIV };
@@ -943,7 +941,7 @@ static ssize_t panel_poc_read(struct file *file, char __user *buf, size_t count,
 		panel_warn("POC:WARN:%s: adjust count %d\n", __func__, (int)count);
 		poc_info->rsize = POC_IMG_SIZE - *ppos;
 	} else {
-		poc_info->rsize = (u32)count;
+		poc_info->rsize = count;
 	}
 
 	res = set_panel_poc(poc_dev, POC_OP_READ);
@@ -1004,7 +1002,7 @@ static ssize_t panel_poc_write(struct file *file, const char __user *buf,
 
 	poc_info->wbuf = poc_wr_img;
 	poc_info->wpos = *ppos;
-	poc_info->wsize = (u32)count;
+	poc_info->wsize = count;
 	res = simple_write_to_buffer(poc_info->wbuf, POC_IMG_SIZE, ppos, buf, count);
 
 	panel_info("%s write %ld bytes (count %ld)\n", __func__, res, count);

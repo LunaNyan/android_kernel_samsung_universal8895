@@ -13,7 +13,6 @@
 
 struct regmap_irq_chip;
 
-extern const struct regmap_irq_chip cs47l15_irq;
 extern const struct regmap_irq_chip cs47l35_irq;
 extern const struct regmap_irq_chip cs47l85_irq;
 extern const struct regmap_irq_chip cs47l90_irq;

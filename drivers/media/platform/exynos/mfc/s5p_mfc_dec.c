@@ -28,7 +28,7 @@
 /* Find selected format description */
 static struct s5p_mfc_fmt *mfc_dec_find_format(struct v4l2_format *f, unsigned int t)
 {
-	unsigned long i;
+	unsigned int i;
 
 	for (i = 0; i < NUM_FORMATS; i++) {
 		if (dec_formats[i].fourcc == f->fmt.pix_mp.pixelformat &&
@@ -41,7 +41,7 @@ static struct s5p_mfc_fmt *mfc_dec_find_format(struct v4l2_format *f, unsigned i
 
 static struct v4l2_queryctrl *mfc_dec_get_ctrl(int id)
 {
-	unsigned long i;
+	int i;
 
 	for (i = 0; i < NUM_CTRLS; ++i)
 		if (id == controls[i].id)
@@ -91,9 +91,9 @@ static int vidioc_querycap(struct file *file, void *priv,
 static int mfc_dec_enum_fmt(struct v4l2_fmtdesc *f, bool mplane, bool out)
 {
 	struct s5p_mfc_fmt *fmt;
-	unsigned long i, j = 0;
+	int i, j = 0;
 
-	for (i = 0; i < NUM_FORMATS; ++i) {
+	for (i = 0; i < ARRAY_SIZE(dec_formats); ++i) {
 		if (mplane && dec_formats[i].mem_planes == 1)
 			continue;
 		else if (!mplane && dec_formats[i].mem_planes > 1)
@@ -107,7 +107,7 @@ static int mfc_dec_enum_fmt(struct v4l2_fmtdesc *f, bool mplane, bool out)
 			break;
 		++j;
 	}
-	if (i == NUM_FORMATS)
+	if (i == ARRAY_SIZE(dec_formats))
 		return -EINVAL;
 	fmt = &dec_formats[i];
 	strlcpy(f->description, fmt->name, sizeof(f->description));
@@ -388,6 +388,7 @@ static int vidioc_s_fmt_vid_out_mplane(struct file *file, void *priv,
 		dec->src_buf_size = MAX_FRAME_SIZE;
 	mfc_debug(2, "sizeimage: %d\n", pix_mp->plane_fmt[0].sizeimage);
 	pix_mp->plane_fmt[0].bytesperline = 0;
+	MFC_TRACE_CTX_HWLOCK("**DEC s_fmt\n");
 	ret = s5p_mfc_get_hwlock_ctx(ctx);
 	if (ret < 0) {
 		mfc_err_ctx("Failed to get hwlock.\n");
@@ -442,9 +443,7 @@ static int vidioc_s_fmt_vid_out_mplane(struct file *file, void *priv,
 		return -ENOMEM;
 	}
 
-	s5p_mfc_change_state(ctx, MFCINST_INIT);
 	s5p_mfc_set_bit(ctx->num, &dev->work_bits);
-
 	ret = s5p_mfc_just_run(dev, ctx->num);
 	if (ret) {
 		mfc_err_ctx("Failed to run MFC.\n");
@@ -1046,8 +1045,10 @@ static int vidioc_s_ctrl(struct file *file, void *priv,
 		mfc_err_dev("not supported CID: 0x%x\n",ctrl->id);
 		break;
 	case V4L2_CID_MPEG_VIDEO_QOS_RATIO:
-		ctx->qos_ratio = ctrl->value;
+		if (ctrl->value > 150)
+			ctrl->value = 1000;
 		mfc_info_ctx("set %d qos_ratio.\n", ctrl->value);
+		ctx->qos_ratio = ctrl->value;
 		break;
 	case V4L2_CID_MPEG_MFC_SET_DYNAMIC_DPB_MODE:
 		dec->is_dynamic_dpb = ctrl->value;

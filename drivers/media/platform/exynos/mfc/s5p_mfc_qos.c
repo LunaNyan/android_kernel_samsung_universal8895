@@ -50,17 +50,15 @@ static void mfc_qos_operate(struct s5p_mfc_ctx *ctx, int opr_type, int idx)
 				qos_table[idx].freq_kfc);
 #endif
 
-		if (ctx->type == MFCINST_DECODER)
-			bts_update_scen(BS_MFC_UHD_10BIT, qos_table[idx].mo_10bit_value);
 		bts_update_scen(BS_MFC_UHD, qos_table[idx].mo_value);
 
 		atomic_set(&dev->qos_req_cur, idx + 1);
-		MFC_TRACE_CTX("-- QOS add[%d] (int:%d, mif:%d, mo:%d, mo_10bit:%d)\n",
+		MFC_TRACE_CTX("-- QOS add[%d] (int:%d, mif:%d, mo:%d)\n",
 				idx, qos_table[idx].freq_int, qos_table[idx].freq_mif,
-				qos_table[idx].mo_value, qos_table[idx].mo_10bit_value);
-		mfc_debug(2, "QOS add[%d] (int:%d, mif:%d, mo:%d, mo_10bit:%d)\n",
+				qos_table[idx].mo_value);
+		mfc_debug(2, "QOS add[%d] (int:%d, mif:%d, mo:%d)\n",
 				idx, qos_table[idx].freq_int, qos_table[idx].freq_mif,
-				qos_table[idx].mo_value, qos_table[idx].mo_10bit_value);
+				qos_table[idx].mo_value);
 		break;
 	case MFC_QOS_UPDATE:
 		MFC_TRACE_CTX("++ QOS update[%d] (int:%d, mif:%d)\n",
@@ -77,17 +75,16 @@ static void mfc_qos_operate(struct s5p_mfc_ctx *ctx, int opr_type, int idx)
 		pm_qos_update_request(&dev->qos_req_cluster0,
 				qos_table[idx].freq_kfc);
 #endif
-		if (ctx->type == MFCINST_DECODER)
-			bts_update_scen(BS_MFC_UHD_10BIT, qos_table[idx].mo_10bit_value);
+
 		bts_update_scen(BS_MFC_UHD, qos_table[idx].mo_value);
 
 		atomic_set(&dev->qos_req_cur, idx + 1);
-		MFC_TRACE_CTX("-- QOS update[%d] (int:%d, mif:%d, mo:%d, mo_10bit:%d)\n",
+		MFC_TRACE_CTX("-- QOS update[%d] (int:%d, mif:%d, mo: %d)\n",
 				idx, qos_table[idx].freq_int, qos_table[idx].freq_mif,
-				qos_table[idx].mo_value, qos_table[idx].mo_10bit_value);
-		mfc_debug(2, "QOS update[%d] (int:%d, mif:%d, mo:%d, mo_10bit:%d)\n",
+				qos_table[idx].mo_value);
+		mfc_debug(2, "QOS update[%d] (int:%d, mif:%d, mo: %d)\n",
 				idx, qos_table[idx].freq_int, qos_table[idx].freq_mif,
-				qos_table[idx].mo_value, qos_table[idx].mo_10bit_value);
+				qos_table[idx].mo_value);
 		break;
 	case MFC_QOS_REMOVE:
 		MFC_TRACE_CTX("++ QOS remove\n");
@@ -100,8 +97,6 @@ static void mfc_qos_operate(struct s5p_mfc_ctx *ctx, int opr_type, int idx)
 		pm_qos_remove_request(&dev->qos_req_cluster0);
 #endif
 
-		if (ctx->type == MFCINST_DECODER)
-			bts_update_scen(BS_MFC_UHD_10BIT, 0);
 		bts_update_scen(BS_MFC_UHD, 0);
 
 		dev->mfc_bw.peak = 0;
@@ -158,7 +153,6 @@ static void mfc_qos_set(struct s5p_mfc_ctx *ctx, struct bts_bw *mfc_bw, int i)
 static inline unsigned long mfc_qos_get_weighted_mb(struct s5p_mfc_ctx *ctx,
 						unsigned long mb)
 {
-	struct s5p_mfc_dec *dec = ctx->dec_priv;
 	u32 num_planes = ctx->dst_fmt->num_planes;
 	int weight = 1000;
 	unsigned long weighted_mb;
@@ -177,16 +171,10 @@ static inline unsigned long mfc_qos_get_weighted_mb(struct s5p_mfc_ctx *ctx,
 		if (num_planes == 3) {
 			weight = 100000 / MFC_QOS_WEIGHT_3PLANE;
 		} else {
-			if (ctx->is_10bit) {
-				if (dec && dec->super64_bframe) {
-					weight = 100000 / MFC_QOS_WEIGHT_10BIT_SUPER64_B;
-					mfc_debug(3, "QoS weight: super64 with B frame\n");
-				} else {
-					weight = 100000 / MFC_QOS_WEIGHT_10BIT;
-				}
-			} else if (ctx->is_422_10_intra) {
+			if (ctx->is_10bit)
+				weight = 100000 / MFC_QOS_WEIGHT_10BIT;
+			else if (ctx->is_422_10_intra)
 				weight = 100000 / MFC_QOS_WEIGHT_422_10INTRA;
-			}
 		}
 		break;
 
@@ -361,8 +349,8 @@ void s5p_mfc_qos_on(struct s5p_mfc_ctx *ctx)
 	struct s5p_mfc_ctx *qos_ctx;
 	struct bts_bw mfc_bw, mfc_bw_ctx;
 	unsigned long hw_mb = 0, total_mb = 0;
-	unsigned int fw_time, sw_time, total_fps = 0;
-	int i, found = 0;
+	unsigned int i, fw_time, sw_time, total_fps = 0;
+	int found = 0;
 
 	list_for_each_entry(qos_ctx, &dev->qos_queue, qos_list)
 		if (qos_ctx == ctx)
@@ -412,8 +400,8 @@ void s5p_mfc_qos_off(struct s5p_mfc_ctx *ctx)
 	struct s5p_mfc_ctx *qos_ctx;
 	struct bts_bw mfc_bw, mfc_bw_ctx;
 	unsigned long hw_mb = 0, total_mb = 0;
-	unsigned int fw_time, sw_time, total_fps = 0;
-	int i, found = 0;
+	unsigned int i, fw_time, sw_time, total_fps = 0;
+	int found = 0;
 
 	if (list_empty(&dev->qos_queue)) {
 		if (atomic_read(&dev->qos_req_cur) != 0) {

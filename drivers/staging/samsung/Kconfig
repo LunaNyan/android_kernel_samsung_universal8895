@@ -73,14 +73,6 @@ config SEC_DEBUG_LAST_KMSG
 	depends on SEC_DEBUG
 	default y
 
-config SEC_DEBUG_INIT_LOG
-	bool "support hooking of init task log"
-	depends on SEC_DEBUG
-	default y
-	help
-	  This option enables hooking of init task log. 
-	  It can be used for debugging purpose in case of booting failure or something else.
-	
 config SEC_DEBUG_FILE_LEAK
 	bool "Panic when file leak detected"
 	depends on !SAMSUNG_PRODUCT_SHIP
@@ -104,7 +96,7 @@ config CM_OFFSET
 config SEC_EVENT_LOG
 	bool "Enable Event log parser"
 	depends on SEC_EXT
-	default n
+	default y
 
 config SEC_BOOTSTAT
 	bool "Enable TN Bootstat logging"
@@ -140,7 +132,6 @@ config SEC_FACTORY
 	bool "SAMSUNG Factory build option"
 	depends on SEC_EXT
 	default n
-	select SEC_PANIC_PCIE_ERR
 	select SLUB_DEBUG
 	help
 	  Include some codes for Factory binary.
@@ -193,32 +184,3 @@ config SEC_NAD_MANUAL_PARAM_READTIME
 	help
 	  Samsung TN NAD Feature, set param reading time manually.
 
-config SEC_SUPPORT_SECOND_NAD
-	bool "Samsung TN 2nd NAD Feature"
-	depends on SEC_NAD
-	default n
-	help
-	  Samsung TN NAD Feature, support 2nd NAD feature.
-	  
-config SEC_NAD_HPM
-	bool "Samsung TN NAD HPM Feature"
-	depends on SEC_NAD
-	default n
-	help
-	  Samsung TN NAD Feature, Enable NAD HPM
-
-config SEC_NAD_API
-	bool "Samsung TN NAD API Feature"
-	depends on SEC_NAD
-	default n
-	help
-	  Samsung TN NAD Feature, Support NAD API to check gpio pull-up registance
-
-config SEC_NAD_BALANCER
-	bool "Samsung TN NAD Balancer Feature"
-	depends on SEC_NAD
-	default n
-	help
-	  This option enables Samsung TN NAD Balancer Feature.
-	  This option also can generate thread to change dvfs frequency. It helps keep balancing
-	  between user and factory binary.

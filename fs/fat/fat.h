@@ -8,7 +8,7 @@
 #include <linux/msdos_fs.h>
 
 #ifdef CONFIG_FAT_SUPPORT_STLOG
-#include <linux/fslog.h>
+#include <linux/stlog.h>
 #else
 #define ST_LOG(fmt,...) 
 #endif

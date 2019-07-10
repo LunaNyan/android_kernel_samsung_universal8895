@@ -163,7 +163,6 @@ void exynos_pcie_phy_config(void *phy_base_regs, void *phy_pcs_base_regs, void *
 				     /* Gen1 */
 				    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x05, 0x85, 0xFF, 0x00, };
 	int i;
-	u32 reg_val;
 
 	writel(readl(sysreg_base_regs) & ~(0x1 << 1), sysreg_base_regs);
 	writel((((readl(sysreg_base_regs + 0xC) & ~(0xf << 4)) & ~(0xf << 2)) | (0x3 << 2)) & ~(0x1 << 1), sysreg_base_regs + 0xC);
@@ -201,14 +200,11 @@ void exynos_pcie_phy_config(void *phy_base_regs, void *phy_pcs_base_regs, void *
 	/* tx latency */
 	writel(0x70, phy_pcs_base_regs + 0xF8);
 	/* pcs refclk out control */
-	writel(0x87, phy_pcs_base_regs + 0x100);
+	writel(0x81, phy_pcs_base_regs + 0x100);
 	writel(0x50, phy_pcs_base_regs + 0x104);
 
 	/* PRGM_TIMEOUT_L1SS_VAL Setting */
-	reg_val = readl(phy_pcs_base_regs + 0xC);
-	reg_val &= ~(0x1 << 1);
-	reg_val |= (0x1 << 4);
-	writel(reg_val, phy_pcs_base_regs + 0xC);
+	writel(readl(phy_pcs_base_regs + 0xC) | (0x1 << 4), phy_pcs_base_regs + 0xC);
 
 	/* PCIE_MAC RST */
 	writel(0x1, elbi_base_regs + 0x290);
@@ -272,8 +268,10 @@ static void quirk_brcm_enable(struct pci_dev *dev)
 			break;
 		pr_info("BAR0 resizing retry - %d %x\n", ++count, reg);
 		pci_write_config_dword(dev, PCI_BASE_ADDRESS_0, 0x11C00000);
-		if (count > 100)
+
+		if (count > 100) 
 			break;
+
 	}
 
 	pr_info("After changing BAR0\n");

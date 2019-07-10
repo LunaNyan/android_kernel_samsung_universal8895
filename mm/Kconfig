@@ -743,14 +743,6 @@ config LARGE_DIRTY_BUFFER
 	help
 	  If unsure, say N to use kernel default value
 
-config MAX_DIRTY_THRESH_PAGES
-	int "The upper bound of VM dirty_thresh value in number of pages"
-	default 0
-	help
-	  This value is the upper bound of VM dirty-thresh. (0 means no limit.)
-	  It is only effective when dirty_ratio is used.
-	  (Setting dirty_bytes disables this option.)
-
 config BALANCE_ANON_FILE_RECLAIM
 	bool "During reclaim treat anon and file backed pages equally"
 	depends on SWAP
@@ -759,14 +751,3 @@ config BALANCE_ANON_FILE_RECLAIM
 	  equally.
 	  Swapping anonymous pages out to memory can be efficient enough to justify
 	  treating anonymous and file backed pages equally.
-
-config RBIN
-	bool "RBIN memory support"
-	default n
-	depends on CMA
-	help
-	  This provides RBIN functionality in memory management.
-	  RBIN memory is similar with CMA. Only the movable allocations with
-	  __GFP_RBIN can be allocated in the RBIN memory. (In this way,
-	  we can differentiate the pages going to CMA and RBIN.) Currently,
-	  there is only one user of RBIN memory, ION RBIN heap.

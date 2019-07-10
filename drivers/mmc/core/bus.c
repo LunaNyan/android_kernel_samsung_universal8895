@@ -29,7 +29,7 @@
 #define to_mmc_driver(d)	container_of(d, struct mmc_driver, drv)
 
 #ifdef CONFIG_MMC_SUPPORT_STLOG
-#include <linux/fslog.h>
+#include <linux/stlog.h>
 #else
 #define ST_LOG(fmt,...)
 #endif
@@ -163,9 +163,6 @@ static int mmc_bus_suspend(struct device *dev)
 		return 0;
 
 	ret = host->bus_ops->suspend(host);
-	if (ret)
-		pm_generic_resume(dev);
-
 	return ret;
 }
 

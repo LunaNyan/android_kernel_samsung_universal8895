@@ -23,8 +23,8 @@
 #include <linux/spi/spi.h>
 
 #include <linux/platform_data/spi-s3c64xx.h>
-#include <linux/wakelock.h>
 #ifdef ENABLE_SENSORS_FPRINT_SECURE
+#include <linux/wakelock.h>
 #include <linux/clk.h>
 #include <linux/pm_runtime.h>
 #include <linux/spi/spidev.h>
@@ -221,7 +221,6 @@ struct etspi_data {
 	bool enabled_clk;
 	struct wake_lock fp_spi_lock;
 #endif
-	struct wake_lock fp_signal_lock;
 	bool tz_mode;
 	int detect_period;
 	int detect_threshold;
@@ -250,5 +249,10 @@ int etspi_io_nvm_off(struct etspi_data *etspi, struct egis_ioc_transfer *ioc);
 int etspi_io_vdm_read(struct etspi_data *etspi, struct egis_ioc_transfer *ioc);
 int etspi_io_vdm_write(struct etspi_data *etspi, struct egis_ioc_transfer *ioc);
 int etspi_io_get_frame(struct etspi_data *etspi, u8 *frame, u32 size);
+
+extern int fingerprint_register(struct device *dev, void *drvdata,
+	struct device_attribute *attributes[], char *name);
+extern void fingerprint_unregister(struct device *dev,
+	struct device_attribute *attributes[]);
 
 #endif

@@ -72,9 +72,9 @@
 #define SEC_BAT_CURRENT_EVENT_VBAT_OVP			0x1000
 #define SEC_BAT_CURRENT_EVENT_VSYS_OVP			0x2000
 #define SEC_BAT_CURRENT_EVENT_WPC_VOUT_LOCK		0x4000
-#define SEC_BAT_CURRENT_EVENT_AICL			0x8000
-#define SEC_BAT_CURRENT_EVENT_HV_DISABLE		0x10000
-#define SEC_BAT_CURRENT_EVENT_SELECT_PDO		0x20000
+
+#define SIOP_EVENT_NONE 	0x0000
+#define SIOP_EVENT_WPC_CALL 	0x0001
 
 #if defined(CONFIG_SEC_FACTORY)             // SEC_FACTORY
 #define STORE_MODE_CHARGING_MAX 80
@@ -106,10 +106,8 @@
 
 #define BATT_MISC_EVENT_UNDEFINED_RANGE_TYPE	0x00000001
 #define BATT_MISC_EVENT_WIRELESS_BACKPACK_TYPE	0x00000002
-#define BATT_MISC_EVENT_TIMEOUT_OPEN_TYPE		0x00000004
-#define BATT_MISC_EVENT_BATT_RESET_SOC			0x00000008
-#define BATT_MISC_EVENT_HICCUP_TYPE				0x00000020
-#define BATT_MISC_EVENT_WIRELESS_FOD			0x00000100
+#define BATT_MISC_EVENT_TIMEOUT_OPEN_TYPE	0x00000004
+#define BATT_MISC_EVENT_BATT_RESET_SOC		0x00000008
 
 #define SEC_INPUT_VOLTAGE_0V	0
 #define SEC_INPUT_VOLTAGE_5V	5
@@ -187,7 +185,6 @@ struct sec_battery_info {
 
 	bool is_sysovlo;
 	bool is_vbatovlo;
-	bool is_abnormal_temp;
 
 	bool safety_timer_set;
 	bool lcd_status;
@@ -196,7 +193,6 @@ struct sec_battery_info {
 	int status;
 	int health;
 	bool present;
-	unsigned int charger_mode;
 
 	int voltage_now;		/* cell voltage (mV) */
 	int voltage_avg;		/* average voltage (mV) */
@@ -205,7 +201,6 @@ struct sec_battery_info {
 	int inbat_adc;                  /* inbat adc */
 	int current_avg;		/* average current (mA) */
 	int current_max;		/* input current limit (mA) */
-	int charge_counter;		/* remaining capacity (uAh) */
 	int current_adc;
 
 	unsigned int capacity;			/* SOC (%) */
@@ -238,11 +233,6 @@ struct sec_battery_info {
 	struct cisd cisd;
 	bool skip_cisd;
 	bool usb_overheat_check;
-	int prev_volt;
-	int prev_temp;
-	int prev_jig_on;
-	int enable_update_data;
-	int prev_chg_on;
 #endif
 
 	/* battery check */
@@ -331,6 +321,8 @@ struct sec_battery_info {
 	struct delayed_work update_work;
 	struct delayed_work fw_init_work;
 #endif
+	struct delayed_work siop_event_work;
+	struct wake_lock siop_event_wake_lock;
 	struct delayed_work siop_level_work;
 	struct wake_lock siop_level_wake_lock;
 	struct delayed_work wc_headroom_work;
@@ -344,7 +336,6 @@ struct sec_battery_info {
 	struct delayed_work parse_mode_dt_work;
 	struct wake_lock parse_mode_dt_wake_lock;
 #endif
-	struct delayed_work init_chg_work;
 
 	char batt_type[48];
 	unsigned int full_check_cnt;
@@ -358,7 +349,6 @@ struct sec_battery_info {
 	unsigned int current_event;
 
 	/* wireless charging enable */
-	struct mutex wclock;
 	int wc_enable;
 	int wc_enable_cnt;
 	int wc_enable_cnt_value;
@@ -366,7 +356,6 @@ struct sec_battery_info {
 	int wc_status;
 	bool wc_cv_mode;
 	bool wc_pack_max_curr;
-	bool wc_rx_phm_mode;
 
 	int wire_status;
 
@@ -384,6 +373,7 @@ struct sec_battery_info {
 	bool is_hc_usb;
 
 	int siop_level;
+	int siop_event;
 	int siop_prev_event;
 	int stability_test;
 	int eng_not_full_status;
@@ -401,7 +391,6 @@ struct sec_battery_info {
 #endif
 #if defined(CONFIG_CALC_TIME_TO_FULL)
 	int timetofull;
-	struct delayed_work timetofull_work;
 #endif
 	struct delayed_work slowcharging_work;
 #if defined(CONFIG_BATTERY_AGE_FORECAST)
@@ -421,9 +410,6 @@ struct sec_battery_info {
 	unsigned int prev_misc_event;
 	struct delayed_work misc_event_work;
 	struct wake_lock misc_event_wake_lock;
-	unsigned int ext_event;
-	struct delayed_work ext_event_work;
-	struct wake_lock ext_event_wake_lock;
 	struct mutex batt_handlelock;
 	struct mutex current_eventlock;
 	struct mutex typec_notylock;
@@ -616,8 +602,6 @@ enum {
 	CISD_WIRE_COUNT,
 	CISD_WC_DATA,
 	CISD_WC_DATA_JSON,
-	PREV_BATTERY_DATA,
-	PREV_BATTERY_INFO,
 #endif
 #if defined(CONFIG_BATTERY_SBM_DATA)
 	SBM_DATA,
@@ -629,8 +613,6 @@ enum {
 	BATT_TEMP_TEST,
 #endif
 	BATT_CURRENT_EVENT,
-	CC_INFO,
-	EXT_EVENT,
 };
 
 enum {
@@ -665,7 +647,6 @@ extern int sec_battery_update_data(const char* file_path);
 #if defined(CONFIG_BATTERY_CISD)
 extern bool sec_bat_cisd_check(struct sec_battery_info *battery);
 extern void sec_battery_cisd_init(struct sec_battery_info *battery);
-extern void set_cisd_pad_data(struct sec_battery_info *battery, const char* buf);
 #endif
 #if defined(CONFIG_BATTERY_SBM_DATA)
 extern bool sec_bat_add_sbm_data(struct sec_battery_info *battery, int data_type);

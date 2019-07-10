@@ -140,7 +140,7 @@ static int mfc_enc_enum_fmt(struct v4l2_fmtdesc *f, bool mplane, bool out)
 	unsigned long i;
 	int j = 0;
 
-	for (i = 0; i < NUM_FORMATS; ++i) {
+	for (i = 0; i < ARRAY_SIZE(enc_formats); ++i) {
 		if (mplane && enc_formats[i].mem_planes == 1)
 			continue;
 		else if (!mplane && enc_formats[i].mem_planes > 1)
@@ -308,6 +308,7 @@ static int vidioc_s_fmt(struct file *file, void *priv, struct v4l2_format *f)
 			mfc_err_ctx("failed to set capture format\n");
 			return -EINVAL;
 		}
+		s5p_mfc_change_state(ctx, MFCINST_INIT);
 
 		ctx->dst_fmt = fmt;
 		ctx->codec_mode = ctx->dst_fmt->codec_mode;
@@ -333,7 +334,7 @@ static int vidioc_s_fmt(struct file *file, void *priv, struct v4l2_format *f)
 				return -ENOMEM;
 			}
 		}
-
+		MFC_TRACE_CTX_HWLOCK("**ENC s_fmt\n");
 		ret = s5p_mfc_get_hwlock_ctx(ctx);
 		if (ret < 0) {
 			mfc_err_dev("Failed to get hwlock.\n");
@@ -342,9 +343,7 @@ static int vidioc_s_fmt(struct file *file, void *priv, struct v4l2_format *f)
 			return -EBUSY;
 		}
 
-		s5p_mfc_change_state(ctx, MFCINST_INIT);
 		s5p_mfc_set_bit(ctx->num, &dev->work_bits);
-
 		ret = s5p_mfc_just_run(dev, ctx->num);
 		if (ret) {
 			mfc_err_ctx("Failed to run MFC.\n");
@@ -538,6 +537,8 @@ static int vidioc_querybuf(struct file *file, void *priv,
 			mfc_err_dev("error in vb2_querybuf() for E(D)\n");
 			return ret;
 		}
+		buf->m.planes[0].m.mem_offset += DST_QUEUE_OFF_BASE;
+
 	} else if (buf->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
 		ret = vb2_querybuf(&ctx->vq_src, buf);
 		if (ret != 0) {
@@ -701,9 +702,6 @@ static int mfc_enc_ext_info(struct s5p_mfc_ctx *ctx)
 	val |= ENC_SET_QP_BOUND_PB;
 	val |= ENC_SET_FIXED_SLICE;
 	val |= ENC_SET_PVC_MODE;
-
-	if (FW_HAS_RATIO_INTRA_CTRL(dev))
-		val |= ENC_SET_RATIO_OF_INTRA;
 
 	return val;
 }
@@ -1505,9 +1503,6 @@ static int mfc_enc_set_param(struct s5p_mfc_ctx *ctx, struct v4l2_control *ctrl)
 		break;
 	case V4L2_CID_MPEG_MFC90_VIDEO_HEVC_SIGN_DATA_HIDING:
 		break;
-	case V4L2_CID_MPEG_VIDEO_RATIO_OF_INTRA:
-		p->ratio_intra = ctrl->value;
-		break;
 	default:
 		mfc_err_ctx("Invalid control: 0x%08x\n", ctrl->id);
 		ret = -EINVAL;
@@ -1581,7 +1576,6 @@ static int mfc_enc_set_ctrl_val(struct s5p_mfc_ctx *ctx, struct v4l2_control *ct
 	case V4L2_CID_MPEG_MFC_H264_BASE_PRIORITY:
 	case V4L2_CID_MPEG_MFC_CONFIG_QP:
 	case V4L2_CID_MPEG_VIDEO_ROI_CONTROL:
-	case V4L2_CID_MPEG_VIDEO_RATIO_OF_INTRA:
 		list_for_each_entry(ctx_ctrl, &ctx->ctrls, list) {
 			if (!(ctx_ctrl->type & MFC_CTRL_TYPE_SET))
 				continue;
@@ -1611,15 +1605,6 @@ static int mfc_enc_set_ctrl_val(struct s5p_mfc_ctx *ctx, struct v4l2_control *ct
 							enc->sh_handle_svc.fd = -1;
 							return -EINVAL;
 						}
-				}
-				if (ctx_ctrl->id == V4L2_CID_MPEG_MFC51_VIDEO_I_PERIOD_CH &&
-						p->i_frm_ctrl_mode) {
-					ctx_ctrl->val = ctx_ctrl->val * (p->num_b_frame + 1);
-					if (ctx_ctrl->val >= 0x3FFFFFFF) {
-						mfc_info_ctx("I frame interval is bigger than max: %d\n",
-								ctx_ctrl->val);
-						ctx_ctrl->val = 0x3FFFFFFF;
-					}
 				}
 				if (ctx_ctrl->id == V4L2_CID_MPEG_VIDEO_H264_LEVEL)
 					ctx_ctrl->val = mfc_enc_h264_level((enum v4l2_mpeg_video_h264_level)(ctrl->value));

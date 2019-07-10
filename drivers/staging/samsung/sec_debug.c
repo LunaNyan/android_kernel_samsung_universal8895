@@ -59,12 +59,6 @@ int sec_debug_get_debug_level(void)
 	return sec_debug_level.uint_val;
 }
 
-void sec_debug_set_debug_level(unsigned int val)
-{
-	pr_info("set debug level from %x to %x\n", sec_debug_level.uint_val, val);
-	sec_debug_level.uint_val = val;
-}
-
 static void sec_debug_user_fault_dump(void)
 {
 	if (sec_debug_level.en.kernel_fault == 1 &&
@@ -498,7 +492,7 @@ late_initcall(sec_last_kmsg_late_init);
 #endif /* CONFIG_SEC_DEBUG_LAST_KMSG */
 
 #ifdef CONFIG_SEC_DEBUG_FILE_LEAK
-int sec_debug_print_file_list(void)
+void sec_debug_print_file_list(void)
 {
 	int i = 0;
 	unsigned int count = 0;
@@ -506,7 +500,6 @@ int sec_debug_print_file_list(void)
 	struct files_struct *files = current->files;
 	const char *p_rootname = NULL;
 	const char *p_filename = NULL;
-	int ret = 0;
 
 	count = files->fdt->max_fds;
 
@@ -530,15 +523,9 @@ int sec_debug_print_file_list(void)
 
 			pr_err("[%04d]%s%s\n", i, p_rootname ? p_rootname : "null",
 			       p_filename ? p_filename : "null");
-			ret++;
 		}
 		rcu_read_unlock();
 	}
-
-	if(ret > count - 50)
-		return 1;
-	else
-		return 0;
 }
 
 void sec_debug_EMFILE_error_proc(unsigned long files_addr)
@@ -563,9 +550,8 @@ void sec_debug_EMFILE_error_proc(unsigned long files_addr)
 	if (!strcmp(current->group_leader->comm, "system_server") ||
 	    !strcmp(current->group_leader->comm, "mediaserver") ||
 	    !strcmp(current->group_leader->comm, "surfaceflinger")) {
-		if (sec_debug_print_file_list() == 1) {
-			panic("Too many open files");
-		}
+		sec_debug_print_file_list();
+		panic("Too many open files");
 	}
 }
 #endif /* CONFIG_SEC_DEBUG_FILE_LEAK */
@@ -573,46 +559,13 @@ void sec_debug_EMFILE_error_proc(unsigned long files_addr)
 /* leave the following definithion of module param call here for the compatibility with other models */
 module_param_call(force_error, sec_debug_force_error, NULL, NULL, 0644);
 
-static int sec_debug_check_magic(struct sec_debug_shared_info *sdi)
-{
-	if (sdi->magic[0] != SEC_DEBUG_SHARED_MAGIC0) {
-		pr_crit("%s: wrong magic 0: %x|%x\n",
-				__func__, sdi->magic[0], SEC_DEBUG_SHARED_MAGIC0);
-		return 0;
-	}
-
-	if (sdi->magic[1] != SEC_DEBUG_SHARED_MAGIC1) {
-		pr_crit("%s: wrong magic 1: %x|%x\n",
-				__func__, sdi->magic[1], SEC_DEBUG_SHARED_MAGIC1);
-		return 0;
-	}
-
-	if (sdi->magic[2] != SEC_DEBUG_SHARED_MAGIC2) {
-		pr_crit("%s: wrong magic 2: %x|%x\n",
-				__func__, sdi->magic[2], SEC_DEBUG_SHARED_MAGIC2);
-		return 0;
-	}
-
-	if (sdi->magic[3] != SEC_DEBUG_SHARED_MAGIC3) {
-		pr_crit("%s: wrong magic 3: %x|%x\n",
-				__func__, sdi->magic[3], SEC_DEBUG_SHARED_MAGIC3);
-		return 0;
-	}
-
-	return 1;
-}
-
 static struct sec_debug_shared_info *sec_debug_info;
 
 static void sec_debug_init_base_buffer(unsigned long base, unsigned long size)
 {
-	int magic_status = 0;
-
 	sec_debug_info = (struct sec_debug_shared_info *)phys_to_virt(base);
 
 	if (sec_debug_info) {
-		if (sec_debug_check_magic(sec_debug_info))
-			magic_status = 1;
 
 		sec_debug_info->magic[0] = SEC_DEBUG_SHARED_MAGIC0;
 		sec_debug_info->magic[1] = SEC_DEBUG_SHARED_MAGIC1;
@@ -622,7 +575,7 @@ static void sec_debug_init_base_buffer(unsigned long base, unsigned long size)
 		sec_debug_set_kallsyms_info(sec_debug_info);
 
 #ifdef CONFIG_SEC_DEBUG_EXTRA_INFO
-		sec_debug_init_extra_info(sec_debug_info, magic_status);
+		sec_debug_init_extra_info(sec_debug_info);
 #endif
 
 	}

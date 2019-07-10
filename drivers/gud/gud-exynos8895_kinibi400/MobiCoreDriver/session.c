@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2016 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -26,16 +26,12 @@
 #include <linux/fs.h>
 #include <linux/net.h>
 #include <net/sock.h>		/* sockfd_lookup */
-#include <linux/version.h>
-#if KERNEL_VERSION(4, 11, 0) <= LINUX_VERSION_CODE
-#include <linux/sched/clock.h>	/* local_clock */
-#include <linux/sched/task.h>	/* put_task_struct */
-#endif
 
 #include "public/mc_user.h"
 #include "public/mc_admin.h"
 
-#if KERNEL_VERSION(3, 5, 0) <= LINUX_VERSION_CODE
+#include "platform.h"		/* MC_NO_UIDGIT_H */
+#ifndef MC_NO_UIDGIT_H
 #include <linux/uidgid.h>
 #else
 #define kuid_t uid_t
@@ -118,77 +114,6 @@ static void wsm_free(struct tee_session *session, struct tee_wsm *wsm)
 	wsm->in_use = false;
 }
 
-#if KERNEL_VERSION(4, 6, 0) <= LINUX_VERSION_CODE
-static int hash_path_and_data(struct task_struct *task, u8 *hash,
-			      const void *data, unsigned int data_len)
-{
-	struct mm_struct *mm = task->mm;
-	struct crypto_shash *tfm;
-	char *buf;
-	char *path;
-	unsigned int path_len;
-	int ret = 0;
-
-	buf = (char *)__get_free_page(GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
-
-	down_read(&mm->mmap_sem);
-	if (!mm->exe_file) {
-		ret = -ENOENT;
-		goto end;
-	}
-
-	path = d_path(&mm->exe_file->f_path, buf, PAGE_SIZE);
-	if (IS_ERR(path)) {
-		ret = PTR_ERR(path);
-		goto end;
-	}
-
-	mc_dev_devel("process path =");
-	{
-		char *c;
-
-		for (c = path; *c; c++)
-			mc_dev_devel("%c %d", *c, *c);
-	}
-
-	path_len = (unsigned int)strnlen(path, PAGE_SIZE);
-	mc_dev_devel("path_len = %u", path_len);
-	/* Compute hash of path */
-	tfm = crypto_alloc_shash("sha1", 0, 0);
-	if (IS_ERR(tfm)) {
-		ret = PTR_ERR(tfm);
-		mc_dev_err("cannot allocate shash: %d", ret);
-		goto end;
-	}
-
-	{
-		SHASH_DESC_ON_STACK(desc, tfm);
-
-		desc->tfm = tfm;
-		desc->flags = CRYPTO_TFM_REQ_MAY_SLEEP;
-
-		crypto_shash_init(desc);
-		crypto_shash_update(desc, (u8 *)path, path_len);
-		if (data) {
-			mc_dev_devel("hashing additional data");
-			crypto_shash_update(desc, data, data_len);
-		}
-
-		crypto_shash_final(desc, hash);
-		shash_desc_zero(desc);
-	}
-
-	crypto_free_shash(tfm);
-
-end:
-	up_read(&mm->mmap_sem);
-	free_page((unsigned long)buf);
-
-	return ret;
-}
-#else
 static int hash_path_and_data(struct task_struct *task, u8 *hash,
 			      const void *data, unsigned int data_len)
 {
@@ -226,7 +151,6 @@ static int hash_path_and_data(struct task_struct *task, u8 *hash,
 
 	path_len = (unsigned int)strnlen(path, PAGE_SIZE);
 	mc_dev_devel("path_len = %u", path_len);
-	/* Compute hash of path */
 	desc.tfm = crypto_alloc_hash("sha1", 0, CRYPTO_ALG_ASYNC);
 	if (IS_ERR(desc.tfm)) {
 		ret = PTR_ERR(desc.tfm);
@@ -253,11 +177,6 @@ end:
 
 	return ret;
 }
-#endif
-
-#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
-#define GROUP_AT(gi, i) ((gi)->gid[i])
-#endif
 
 /*
  * groups_search is not EXPORTed so copied from kernel/groups.c
@@ -303,8 +222,8 @@ static int check_prepare_identity(const struct mc_identity *identity,
 	/* Copy login type */
 	mcp_identity->login_type = identity->login_type;
 
-	if (identity->login_type == LOGIN_PUBLIC ||
-	    identity->login_type == TEEC_TT_LOGIN_KERNEL)
+	if ((identity->login_type == LOGIN_PUBLIC) ||
+	    (identity->login_type == TEEC_TT_LOGIN_KERNEL))
 		return 0;
 
 	/* Mobicore doesn't support GP client authentication. */
@@ -314,16 +233,16 @@ static int check_prepare_identity(const struct mc_identity *identity,
 	}
 
 	/* Fill in uid field */
-	if (identity->login_type == LOGIN_USER ||
-	    identity->login_type == LOGIN_USER_APPLICATION) {
+	if ((identity->login_type == LOGIN_USER) ||
+	    (identity->login_type == LOGIN_USER_APPLICATION)) {
 		/* Set euid and ruid of the process. */
 		mcp_id->uid.euid = __kuid_val(task_euid(task));
 		mcp_id->uid.ruid = __kuid_val(task_uid(task));
 	}
 
 	/* Check gid field */
-	if (identity->login_type == LOGIN_GROUP ||
-	    identity->login_type == LOGIN_GROUP_APPLICATION) {
+	if ((identity->login_type == LOGIN_GROUP) ||
+	    (identity->login_type == LOGIN_GROUP_APPLICATION)) {
 		const struct cred *cred = __task_cred(task);
 
 		/*
@@ -620,13 +539,12 @@ static int wsm_debug_structs(struct kasnprintf_buf *buf, struct tee_wsm *wsm,
 
 	ret = kasnprintf(buf, "\t\t");
 	if (no < 0)
-		ret = kasnprintf(buf, "tci %pK: cbuf %pK va %pK len %u\n",
-				 wsm, wsm->cbuf, (void *)wsm->va, wsm->len);
+		ret = kasnprintf(buf, "tci %p: cbuf %p va %lx len %u\n",
+				 wsm, wsm->cbuf, wsm->va, wsm->len);
 	else if (wsm->in_use)
 		ret = kasnprintf(buf,
-				 "wsm #%d: cbuf %pK va %pK len %u sva %x\n",
-				 no, wsm->cbuf, (void *)wsm->va, wsm->len,
-				 wsm->sva);
+				 "wsm #%d: cbuf %p va %lx len %u sva %x\n",
+				 no, wsm->cbuf, wsm->va, wsm->len, wsm->sva);
 
 	if (ret < 0)
 		return ret;
@@ -705,10 +623,10 @@ int session_unmap(struct tee_session *session,
 	mutex_lock(&session->wsms_lock);
 	/* Look for buffer in the session WSMs array */
 	for (i = 0; i < MC_MAP_MAX; i++)
-		if (session->wsms[i].in_use &&
-		    buf->va == session->wsms[i].va &&
-		    buf->len == session->wsms[i].len &&
-		    buf->sva == session->wsms[i].sva)
+		if ((session->wsms[i].in_use) &&
+		    (buf->va == session->wsms[i].va) &&
+		    (buf->len == session->wsms[i].len) &&
+		    (buf->sva == session->wsms[i].sva))
 			break;
 
 	if (i == MC_MAP_MAX) {
@@ -911,7 +829,7 @@ int session_debug_structs(struct kasnprintf_buf *buf,
 		type = "MC";
 	}
 
-	ret = kasnprintf(buf, "\tsession %pK [%d]: %4x %s ec %d%s\n",
+	ret = kasnprintf(buf, "\tsession %p [%d]: %4x %s ec %d%s\n",
 			 session, kref_read(&session->kref), session_id, type,
 			 exit_code, is_closing ? " <closing>" : "");
 	if (ret < 0)

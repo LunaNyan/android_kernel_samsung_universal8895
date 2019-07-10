@@ -88,10 +88,6 @@
 #include <linux/delay.h>
 // ] SEC_SELINUX_PORTING_COMMON
 
-#ifdef CONFIG_LOD_SEC
-#include <linux/linux_on_dex.h>
-#endif
-
 #include "avc.h"
 #include "objsec.h"
 #include "netif.h"
@@ -102,14 +98,6 @@
 #include "audit.h"
 #include "avc_ss.h"
 
-#ifdef CONFIG_LOD_SEC
-#ifdef CONFIG_RKP_KDP
-#define rkp_is_lod_cred(x) ((x->type)>>3 & 1)
-#else
-#define rkp_is_lod_cred(x) (uid_is_LOD(x->uid.val) || (strcmp(current->comm, "nst") == 0 && x->uid.val == 0))
-#endif  /* CONFIG_RKP_KDP */
-#endif  /* CONFIG_LOD_SEC */
-
 #ifdef CONFIG_RKP_NS_PROT
 extern unsigned int cmp_ns_integrity(void);
 #else
@@ -118,9 +106,8 @@ unsigned int cmp_ns_integrity(void)
 	return 0;
 }
 #endif
-
 #ifdef CONFIG_RKP_KDP
-#include <linux/rkp.h>
+#include<linux/rkp_entry.h>
 
 RKP_RO_AREA struct task_security_struct init_sec;
 extern struct kmem_cache *tsec_jar;
@@ -192,18 +179,8 @@ unsigned int rkp_get_offset_bp_cred(void)
 /* SECMARK reference count */
 static atomic_t selinux_secmark_refcount = ATOMIC_INIT(0);
 
-// [ SEC_SELINUX_PORTING_COMMON
-static DEFINE_MUTEX(selinux_sdcardfs_lock);
-// ] SEC_SELINUX_PORTING_COMMON
-
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
-// [ SEC_SELINUX_PORTING_COMMON
-#if defined(CONFIG_ALWAYS_ENFORCE) && defined(CONFIG_RKP_KDP)
 RKP_RO_AREA int selinux_enforcing;
-#else
-int selinux_enforcing;
-#endif
-// ] SEC_SELINUX_PORTING_COMMON
 
 static int __init enforcing_setup(char *str)
 {
@@ -875,7 +852,6 @@ static int selinux_set_mnt_opts(struct super_block *sb,
 		sbsec->flags |= SE_SBPROC | SE_SBGENFS;
 
 	if (!strcmp(sb->s_type->name, "debugfs") ||
-	    !strcmp(sb->s_type->name, "tracefs") ||
 	    !strcmp(sb->s_type->name, "sysfs") ||
 	    !strcmp(sb->s_type->name, "pstore"))
 		sbsec->flags |= SE_SBGENFS;
@@ -1734,7 +1710,7 @@ static int current_has_perm(const struct task_struct *tsk,
 
 /* Check whether a task is allowed to use a capability. */
 static int cred_has_capability(const struct cred *cred,
-			       int cap, int audit, bool initns)
+			       int cap, int audit)
 {
 	struct common_audit_data ad;
 	struct av_decision avd;
@@ -1748,26 +1724,10 @@ static int cred_has_capability(const struct cred *cred,
 
 	switch (CAP_TO_INDEX(cap)) {
 	case 0:
-#if defined(CONFIG_LOD_SEC)
-		if (!initns && rkp_is_lod_cred(cred)) {
-			sclass = SECCLASS_CAP_LOD;
-		} else {
-			sclass = initns ? SECCLASS_CAPABILITY : SECCLASS_CAP_USERNS;
-		}
-#else
-		sclass = initns ? SECCLASS_CAPABILITY : SECCLASS_CAP_USERNS;
-#endif
+		sclass = SECCLASS_CAPABILITY;
 		break;
 	case 1:
-#if defined(CONFIG_LOD_SEC)
-		if (!initns && rkp_is_lod_cred(cred)) {
-			sclass = SECCLASS_CAP2_LOD;
-		} else {
-			sclass = initns ? SECCLASS_CAPABILITY2 : SECCLASS_CAP2_USERNS;
-		}
-#else
-		sclass = initns ? SECCLASS_CAPABILITY2 : SECCLASS_CAP2_USERNS;
-#endif
+		sclass = SECCLASS_CAPABILITY2;
 		break;
 	default:
 		printk(KERN_ERR
@@ -2318,8 +2278,7 @@ static int selinux_capable(const struct cred *cred, struct user_namespace *ns,
 	if ((rc = security_integrity_current()))
 		return rc;
 #endif  /* CONFIG_RKP_KDP */
-
-	return cred_has_capability(cred, cap, audit, ns == &init_user_ns);
+	return cred_has_capability(cred, cap, audit);
 }
 
 static int selinux_quotactl(int cmds, int type, int id, struct super_block *sb)
@@ -2412,7 +2371,7 @@ static int selinux_vm_enough_memory(struct mm_struct *mm, long pages)
 #endif  /* CONFIG_RKP_KDP */
 
 	rc = cred_has_capability(current_cred(), CAP_SYS_ADMIN,
-					SECURITY_CAP_NOAUDIT, true);
+					SECURITY_CAP_NOAUDIT);
 	if (rc == 0)
 		cap_sys_admin = 1;
 
@@ -2974,29 +2933,17 @@ static int selinux_sb_kern_mount(struct super_block *sb, int flags, void *data)
 	if ((rc = security_integrity_current()))
 		return rc;
 #endif  /* CONFIG_RKP_KDP */
-
-	// [ SEC_SELINUX_PORTING_COMMON
-	if((strcmp(sb->s_type->name,"sdcardfs")) == 0)
-		mutex_lock(&selinux_sdcardfs_lock);
-
 	rc = superblock_doinit(sb, data);
 	if (rc)
-		goto out;
+		return rc;
 
 	/* Allow all mounts performed by the kernel */
 	if (flags & MS_KERNMOUNT)
-		goto out;
+		return 0;
 
 	ad.type = LSM_AUDIT_DATA_DENTRY;
 	ad.u.dentry = sb->s_root;
-	rc = superblock_has_perm(cred, sb, FILESYSTEM__MOUNT, &ad);
-
-out:
-	if((strcmp(sb->s_type->name,"sdcardfs")) == 0)
-		mutex_unlock(&selinux_sdcardfs_lock);
-	// ] SEC_SELINUX_PORTING_COMMON
-
-	return rc;
+	return superblock_has_perm(cred, sb, FILESYSTEM__MOUNT, &ad);
 }
 
 static int selinux_sb_statfs(struct dentry *dentry)
@@ -3602,7 +3549,7 @@ static int selinux_inode_getsecurity(const struct inode *inode, const char *name
 			    SECURITY_CAP_NOAUDIT);
 	if (!error)
 		error = cred_has_capability(current_cred(), CAP_MAC_ADMIN,
-					    SECURITY_CAP_NOAUDIT, true);
+					    SECURITY_CAP_NOAUDIT);
 	if (!error)
 		error = security_sid_to_context_force(isec->sid, &context,
 						      &size);
@@ -3814,7 +3761,7 @@ static int selinux_file_ioctl(struct file *file, unsigned int cmd,
 	case KDSKBENT:
 	case KDSKBSENT:
 		error = cred_has_capability(cred, CAP_SYS_TTY_CONFIG,
-					    SECURITY_CAP_AUDIT, true);
+					    SECURITY_CAP_AUDIT);
 		break;
 
 	/* default case assumes that the command will go

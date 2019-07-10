@@ -60,7 +60,6 @@
 #include <linux/cgroup.h>
 #include <linux/wait.h>
 
-struct static_key cpusets_pre_enable_key __read_mostly = STATIC_KEY_INIT_FALSE;
 struct static_key cpusets_enabled_key __read_mostly = STATIC_KEY_INIT_FALSE;
 
 /* See "Frequency meter" comments, below. */
@@ -172,13 +171,12 @@ typedef enum {
 	CS_SCHED_LOAD_BALANCE,
 	CS_SPREAD_PAGE,
 	CS_SPREAD_SLAB,
-	CS_FAMILY_BOOST,
 } cpuset_flagbits_t;
 
 /* convenient tests for these bits */
-static inline bool is_cpuset_online(struct cpuset *cs)
+static inline bool is_cpuset_online(const struct cpuset *cs)
 {
-	return test_bit(CS_ONLINE, &cs->flags) && !css_is_dying(&cs->css);
+	return test_bit(CS_ONLINE, &cs->flags);
 }
 
 static inline int is_cpu_exclusive(const struct cpuset *cs)
@@ -220,11 +218,6 @@ static struct cpuset top_cpuset = {
 	.flags = ((1 << CS_ONLINE) | (1 << CS_CPU_EXCLUSIVE) |
 		  (1 << CS_MEM_EXCLUSIVE)),
 };
-
-static inline int is_family_boost_enabled(const struct cpuset *cs)
-{
-	return test_bit(CS_FAMILY_BOOST, &cs->flags);
-}
 
 /**
  * cpuset_for_each_child - traverse online children of a cpuset
@@ -329,24 +322,11 @@ static struct file_system_type cpuset_fs_type = {
 	.mount = cpuset_mount,
 };
 
-int is_top_task(struct task_struct *p)
-{
-	struct cpuset *cpuset_for_task;
-	int ret;
-
-	rcu_read_lock();
-	cpuset_for_task = task_cs(p);
-	ret = is_family_boost_enabled(cpuset_for_task);
-	rcu_read_unlock();
-
-	return ret;
-}
-EXPORT_SYMBOL(is_top_task);
-
 /*
  * Return in pmask the portion of a cpusets's cpus_allowed that
  * are online.  If none are online, walk up the cpuset hierarchy
- * until we find one that does have some online cpus.
+ * until we find one that does have some online cpus.  The top
+ * cpuset always has some cpus online.
  *
  * One way or another, we guarantee to return some non-empty subset
  * of cpu_online_mask.
@@ -355,20 +335,8 @@ EXPORT_SYMBOL(is_top_task);
  */
 static void guarantee_online_cpus(struct cpuset *cs, struct cpumask *pmask)
 {
-	while (!cpumask_intersects(cs->effective_cpus, cpu_online_mask)) {
+	while (!cpumask_intersects(cs->effective_cpus, cpu_online_mask))
 		cs = parent_cs(cs);
-		if (unlikely(!cs)) {
-			/*
-			 * The top cpuset doesn't have any online cpu as a
-			 * consequence of a race between cpuset_hotplug_work
-			 * and cpu hotplug notifier.  But we know the top
-			 * cpuset's effective_cpus is on its way to to be
-			 * identical to cpu_online_mask.
-			 */
-			cpumask_copy(pmask, cpu_online_mask);
-			return;
-		}
-	}
 	cpumask_and(pmask, cs->effective_cpus, cpu_online_mask);
 }
 
@@ -1632,7 +1600,6 @@ typedef enum {
 	FILE_MEMORY_PRESSURE,
 	FILE_SPREAD_PAGE,
 	FILE_SPREAD_SLAB,
-	FILE_FAMILY_BOOST,
 } cpuset_filetype_t;
 
 static int cpuset_write_u64(struct cgroup_subsys_state *css, struct cftype *cft,
@@ -1672,9 +1639,6 @@ static int cpuset_write_u64(struct cgroup_subsys_state *css, struct cftype *cft,
 		break;
 	case FILE_SPREAD_SLAB:
 		retval = update_flag(CS_SPREAD_SLAB, cs, val);
-		break;
-	case FILE_FAMILY_BOOST:
-		retval = update_flag(CS_FAMILY_BOOST, cs, val);
 		break;
 	default:
 		retval = -EINVAL;
@@ -1835,8 +1799,6 @@ static u64 cpuset_read_u64(struct cgroup_subsys_state *css, struct cftype *cft)
 		return is_spread_page(cs);
 	case FILE_SPREAD_SLAB:
 		return is_spread_slab(cs);
-	case FILE_FAMILY_BOOST:
-		return is_family_boost_enabled(cs);
 	default:
 		BUG();
 	}
@@ -1939,7 +1901,6 @@ static struct cftype files[] = {
 	{
 		.name = "memory_pressure",
 		.read_u64 = cpuset_read_u64,
-		.private = FILE_MEMORY_PRESSURE,
 	},
 
 	{
@@ -1963,14 +1924,6 @@ static struct cftype files[] = {
 		.write_u64 = cpuset_write_u64,
 		.private = FILE_MEMORY_PRESSURE_ENABLED,
 	},
-
-	{
-		.name = "family_boost",
-		.read_u64 = cpuset_read_u64,
-		.write_u64 = cpuset_write_u64,
-		.private = FILE_FAMILY_BOOST,
-	},
-
 
 	{ }	/* terminate */
 };
@@ -2131,20 +2084,6 @@ static void cpuset_bind(struct cgroup_subsys_state *root_css)
 	mutex_unlock(&cpuset_mutex);
 }
 
-/*
- * Make sure the new task conform to the current state of its parent,
- * which could have been changed by cpuset just after it inherits the
- * state from the parent and before it sits on the cgroup's task list.
- */
-void cpuset_fork(struct task_struct *task, void *priv)
-{
-	if (task_css_is_root(task, cpuset_cgrp_id))
-		return;
-
-	set_cpus_allowed_ptr(task, &current->cpus_allowed);
-	task->mems_allowed = current->mems_allowed;
-}
-
 static int cpuset_allow_attach(struct cgroup_taskset *tset)
 {
 	const struct cred *cred = current_cred(), *tcred;
@@ -2173,7 +2112,6 @@ struct cgroup_subsys cpuset_cgrp_subsys = {
 	.attach		= cpuset_attach,
 	.post_attach	= cpuset_post_attach,
 	.bind		= cpuset_bind,
-	.fork		= cpuset_fork,
 	.legacy_cftypes	= files,
 	.early_init	= 1,
 };
@@ -2346,13 +2284,6 @@ retry:
 	mutex_unlock(&cpuset_mutex);
 }
 
-static bool force_rebuild;
-
-void cpuset_force_rebuild(void)
-{
-	force_rebuild = true;
-}
-
 /**
  * cpuset_hotplug_workfn - handle CPU/memory hotunplug for a cpuset
  *
@@ -2427,10 +2358,8 @@ static void cpuset_hotplug_workfn(struct work_struct *work)
 	}
 
 	/* rebuild sched domains if cpus_allowed has changed */
-	if (cpus_updated || force_rebuild) {
-		force_rebuild = false;
+	if (cpus_updated)
 		rebuild_sched_domains();
-	}
 }
 
 void cpuset_update_active_cpus(bool cpu_online)
@@ -2447,11 +2376,6 @@ void cpuset_update_active_cpus(bool cpu_online)
 	 */
 	partition_sched_domains(1, NULL, NULL);
 	schedule_work(&cpuset_hotplug_work);
-}
-
-void cpuset_wait_for_hotplug(void)
-{
-	flush_work(&cpuset_hotplug_work);
 }
 
 /*

@@ -52,6 +52,8 @@
 #include "fimc-is-interface-library.h"
 #include "hardware/fimc-is-hw-control.h"
 #endif
+#include <linux/memblock.h>
+#include <asm/map.h>
 
 #define CLUSTER_MIN_MASK			0x0000FFFF
 #define CLUSTER_MIN_SHIFT			0
@@ -411,6 +413,36 @@ p_err:
 	return ret;
 }
 
+static int __init fimc_is_init_static_mem(char *str)
+{
+	ulong addr = 0;
+	struct fimc_is_static_mem static_mem[] = {{0, LIB_START, LIB_SIZE}};
+	struct map_desc fimc_iodesc[ARRAY_SIZE(static_mem)];
+	size_t i;
+
+	if (kstrtoul(str, 0, (ulong *)&addr) || !addr) {
+		probe_warn("[RSC] fimc_is_init_static_mem input address(0x%lx) invalid\n", addr);
+		addr = LIB_START;
+	}
+
+	if (addr != LIB_START)
+		probe_warn("[RSC] reserve-fimc=0x%lx is not equal to LIB_START:0x%lx", addr, LIB_START);
+
+	for (i = 0; i < ARRAY_SIZE(static_mem); i++) {
+		static_mem[i].paddr = memblock_alloc(static_mem[i].size, SZ_4K);
+
+		fimc_iodesc[i].virtual = addr;
+		fimc_iodesc[i].pfn = __phys_to_pfn(static_mem[i].paddr);
+		fimc_iodesc[i].length = static_mem[i].size;
+		fimc_iodesc[i].type = MT_MEMORY;
+	}
+	iotable_init_exec(fimc_iodesc, ARRAY_SIZE(static_mem));
+
+	probe_info("[RSC] fimc_is_init_static_mem done\n");
+	return 0;
+}
+__setup("reserve-fimc=", fimc_is_init_static_mem);
+
 #ifndef ENABLE_RESERVED_MEM
 static int fimc_is_resourcemgr_deinitmem(struct fimc_is_resourcemgr *resourcemgr)
 {
@@ -625,12 +657,8 @@ static int fimc_is_kernel_log_dump(bool overwrite)
 int fimc_is_resource_dump(void)
 {
 	struct fimc_is_core *core = NULL;
-	struct fimc_is_group *group;
-	struct fimc_is_subdev *subdev;
-	struct fimc_is_framemgr *framemgr;
-	struct fimc_is_groupmgr *groupmgr;
 	struct fimc_is_device_ischain *device = NULL;
-	int i, j;
+	int i;
 
 	core = (struct fimc_is_core *)dev_get_drvdata(fimc_is_dev);
 	if (!core)
@@ -638,9 +666,6 @@ int fimc_is_resource_dump(void)
 
 	info("### %s dump start ###\n", __func__);
 
-	groupmgr = &core->groupmgr;
-
-	/* dump per core */
 	for (i = 0; i < FIMC_IS_STREAM_COUNT; ++i) {
 		device = &core->ischain[i];
 		if (!test_bit(FIMC_IS_ISCHAIN_OPEN_STREAM, &device->state))
@@ -662,40 +687,6 @@ int fimc_is_resource_dump(void)
 		fimc_is_hardware_sfr_dump(&core->hardware);
 #endif
 		break;
-	}
-
-	/* dump per ischain */
-	for (i = 0; i < FIMC_IS_STREAM_COUNT; ++i) {
-		device = &core->ischain[i];
-		if (!test_bit(FIMC_IS_ISCHAIN_OPEN_STREAM, &device->state))
-			continue;
-
-		if (test_bit(FIMC_IS_ISCHAIN_CLOSING, &device->state))
-			continue;
-
-		/* dump all framemgr */
-		group = groupmgr->leader[i];
-		while (group) {
-			if (!test_bit(FIMC_IS_GROUP_OPEN, &group->state))
-				break;
-
-			for (j = 0; j < ENTRY_END; j++) {
-				subdev = group->subdev[j];
-				if (subdev && test_bit(FIMC_IS_SUBDEV_START, &subdev->state)) {
-					framemgr = GET_SUBDEV_FRAMEMGR(subdev);
-					if (framemgr) {
-						unsigned long flags;
-
-						mserr(" dump framemgr..", subdev, subdev);
-						framemgr_e_barrier_irqs(framemgr, 0, flags);
-						frame_manager_print_queues(framemgr);
-						framemgr_x_barrier_irqr(framemgr, 0, flags);
-					}
-				}
-			}
-
-			group = group->next;
-		}
 	}
 
 	info("### %s dump end ###\n", __func__);
@@ -881,7 +872,6 @@ int fimc_is_resource_open(struct fimc_is_resourcemgr *resourcemgr, u32 rsc_type,
 		result = &core->sensor[RESOURCE_TYPE_SENSOR3];
 		resource->pdev = core->sensor[RESOURCE_TYPE_SENSOR3].pdev;
 		break;
-#if (FIMC_IS_SENSOR_COUNT > 4)
 	case RESOURCE_TYPE_SENSOR4:
 		result = &core->sensor[RESOURCE_TYPE_SENSOR4];
 		resource->pdev = core->sensor[RESOURCE_TYPE_SENSOR4].pdev;
@@ -890,7 +880,6 @@ int fimc_is_resource_open(struct fimc_is_resourcemgr *resourcemgr, u32 rsc_type,
 		result = &core->sensor[RESOURCE_TYPE_SENSOR5];
 		resource->pdev = core->sensor[RESOURCE_TYPE_SENSOR5].pdev;
 		break;
-#endif
 	case RESOURCE_TYPE_ISCHAIN:
 		for (stream = 0; stream < FIMC_IS_STREAM_COUNT; ++stream) {
 			ischain = &core->ischain[stream];
@@ -917,7 +906,6 @@ int fimc_is_resource_get(struct fimc_is_resourcemgr *resourcemgr, u32 rsc_type)
 	u32 rsccount;
 	struct fimc_is_resource *resource;
 	struct fimc_is_core *core;
-	int i;
 
 	BUG_ON(!resourcemgr);
 	BUG_ON(!resourcemgr->private_data);
@@ -944,19 +932,6 @@ int fimc_is_resource_get(struct fimc_is_resourcemgr *resourcemgr, u32 rsc_type)
 		goto p_err;
 	}
 
-#ifdef ENABLE_KERNEL_LOG_DUMP
-	/* to secure kernel log when there was an instance that remain open */
-	{
-		struct fimc_is_resource *resource_ischain;
-
-		resource_ischain = GET_RESOURCE(resourcemgr, RESOURCE_TYPE_ISCHAIN);
-		if ((rsc_type != RESOURCE_TYPE_ISCHAIN) && rsccount == 1) {
-			if (atomic_read(&resource_ischain->rsccount) == 1)
-				fimc_is_kernel_log_dump(false);
-		}
-	}
-#endif
-
 	if (rsccount == 0) {
 		pm_stay_awake(&core->pdev->dev);
 
@@ -981,14 +956,6 @@ int fimc_is_resource_get(struct fimc_is_resourcemgr *resourcemgr, u32 rsc_type)
 
 		dbg_resource("%s: fimc-is secure state has reset\n", __func__);
 #endif
-		core->dual_info.mode = FIMC_IS_DUAL_MODE_NOTHING;
-		core->dual_info.pre_mode = FIMC_IS_DUAL_MODE_NOTHING;
-		core->dual_info.tick_count = 0;
-
-		for (i = 0; i < MAX_SENSOR_SHARED_RSC; i++) {
-			spin_lock_init(&core->shared_rsc_slock[i]);
-			atomic_set(&core->shared_rsc_count[i], 0);
-		}
 	}
 
 	if (atomic_read(&resource->rsccount) == 0) {
@@ -1324,6 +1291,14 @@ int fimc_is_resource_put(struct fimc_is_resourcemgr *resourcemgr, u32 rsc_type)
 
 	atomic_dec(&resource->rsccount);
 	atomic_dec(&core->rsccount);
+
+#ifdef ENABLE_KERNEL_LOG_DUMP
+	/* to secure kernel log when there was an instance that remain open */
+	if ((rsc_type == RESOURCE_TYPE_ISCHAIN)
+			&& (atomic_read(&resource->rsccount) == 0)
+			&& (atomic_read(&core->rsccount) == 1))
+		fimc_is_kernel_log_dump(false);
+#endif
 
 p_err:
 	info("[RSC] rsctype: %d, rsccount: device[%d], core[%d]\n", rsc_type,

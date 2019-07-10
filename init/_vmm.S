@@ -27,7 +27,6 @@
 
 #define SMC_64BIT_RET_MAGIC 0xC2000401
 
-.section .init.text, "ax"
 .global _vmm_goto_EL2
 _vmm_goto_EL2:
 	smc #0
@@ -40,6 +39,7 @@ _vmm_disable:
 	smc #0
 	isb
 
+.section .vmm, "ax"
 .global _svmm
 _svmm:
 .incbin vmm_ELF_PATH

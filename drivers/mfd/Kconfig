@@ -160,12 +160,6 @@ config MFD_MADERA_SPI
 	  Support for the Cirrus Logic Madera platform audio SoC
 	  core functionality controlled via SPI.
 
-config MFD_CS47L15
-	bool "Cirrus Logic CS47L15"
-	depends on MFD_MADERA
-	help
-	  Support for Cirrus Logic CS47L15 Smart Codec
-
 config MFD_CS47L35
 	bool "Cirrus Logic CS47L35"
 	depends on MFD_MADERA
@@ -1558,7 +1552,6 @@ config MFD_WM8350
 config MFD_WM8350_I2C
 	bool "Wolfson Microelectronics WM8350 with I2C"
 	select MFD_WM8350
-	select REGMAP_I2C
 	depends on I2C=y
 	help
 	  The WM8350 is an integrated audio and power management

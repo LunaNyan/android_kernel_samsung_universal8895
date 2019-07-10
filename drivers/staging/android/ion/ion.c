@@ -406,7 +406,6 @@ static struct ion_buffer *ion_buffer_create(struct ion_heap *heap,
 	struct sg_table *table;
 	struct scatterlist *sg;
 	int i, ret;
-	long nr_alloc_cur, nr_alloc_peak;
 
 	buffer = kzalloc(sizeof(struct ion_buffer), GFP_KERNEL);
 	if (!buffer)
@@ -483,10 +482,6 @@ static struct ion_buffer *ion_buffer_create(struct ion_heap *heap,
 	mutex_lock(&dev->buffer_lock);
 	ion_buffer_add(dev, buffer);
 	mutex_unlock(&dev->buffer_lock);
-	nr_alloc_cur = atomic_long_add_return(len, &heap->total_allocated);
-	nr_alloc_peak = atomic_long_read(&heap->total_allocated_peak);
-	if (nr_alloc_cur > nr_alloc_peak)
-		atomic_long_set(&heap->total_allocated_peak, nr_alloc_cur);
 	return buffer;
 
 err:
@@ -516,7 +511,6 @@ void ion_buffer_destroy(struct ion_buffer *buffer)
 		kfree(iovm_map);
 	}
 
-	atomic_long_sub(buffer->size, &buffer->heap->total_allocated);
 	buffer->heap->ops->unmap_dma(buffer->heap, buffer);
 	buffer->heap->ops->free(buffer);
 	vfree(buffer->pages);
@@ -557,9 +551,6 @@ static int ion_buffer_put(struct ion_buffer *buffer)
 static void ion_buffer_add_to_handle(struct ion_buffer *buffer)
 {
 	mutex_lock(&buffer->lock);
-	if (buffer->handle_count == 0)
-		atomic_long_add(buffer->size, &buffer->heap->total_handles);
-
 	buffer->handle_count++;
 	mutex_unlock(&buffer->lock);
 }
@@ -584,7 +575,6 @@ static void ion_buffer_remove_from_handle(struct ion_buffer *buffer)
 		task = current->group_leader;
 		get_task_comm(buffer->task_comm, task);
 		buffer->pid = task_pid_nr(task);
-		atomic_long_sub(buffer->size, &buffer->heap->total_handles);
 	}
 	mutex_unlock(&buffer->lock);
 }
@@ -658,22 +648,28 @@ static struct ion_handle* ion_handle_get_check_overflow(struct ion_handle *handl
 
 static int ion_handle_put_nolock(struct ion_handle *handle)
 {
-	return kref_put(&handle->ref, ion_handle_destroy);
-}
-
-int ion_handle_put(struct ion_handle *handle)
-{
 	int ret;
 
-	mutex_lock(&handle->client->lock);
-	if (!ion_handle_validate(handle->client, handle)) {
+	ret = kref_put(&handle->ref, ion_handle_destroy);
+
+	return ret;
+}
+
+int ion_handle_put(struct ion_client *client, struct ion_handle *handle)
+{
+	bool valid_handle;
+	int ret;
+
+	mutex_lock(&client->lock);
+	valid_handle = ion_handle_validate(client, handle);
+
+	if (!valid_handle) {
 		WARN(1, "%s: invalid handle passed to free.\n", __func__);
-		mutex_unlock(&handle->client->lock);
+		mutex_unlock(&client->lock);
 		return -EINVAL;
 	}
-
 	ret = ion_handle_put_nolock(handle);
-	mutex_unlock(&handle->client->lock);
+	mutex_unlock(&client->lock);
 
 	return ret;
 }
@@ -713,7 +709,7 @@ static struct ion_handle* pass_to_user(struct ion_handle *handle)
 /* Must hold the client lock */
 static int user_ion_handle_put_nolock(struct ion_handle *handle)
 {
-	int ret = 0;
+	int ret;
 
 	if (--handle->user_ref_count == 0) {
 		ret = ion_handle_put_nolock(handle);
@@ -799,27 +795,6 @@ static int ion_handle_add(struct ion_client *client, struct ion_handle *handle)
 
 unsigned int ion_parse_heap_id(unsigned int heap_id_mask, unsigned int flags);
 
-static size_t ion_buffer_get_total_size_by_pid(struct ion_client *client)
-{
-	struct ion_device *dev = client->dev;
-	pid_t pid = client->pid;
-	size_t pid_total_size = 0;
-	struct rb_node *n;
-
-	mutex_lock(&dev->buffer_lock);
-	for (n = rb_first(&dev->buffers); n; n = rb_next(n)) {
-		struct ion_buffer *buffer = rb_entry(n, struct ion_buffer,
-						     node);
-		mutex_lock(&buffer->lock);
-		if (pid == buffer->pid)
-			pid_total_size += buffer->size;
-		mutex_unlock(&buffer->lock);
-	}
-	mutex_unlock(&dev->buffer_lock);
-
-	return pid_total_size;
-}
-
 static struct ion_handle *__ion_alloc(struct ion_client *client, size_t len,
 			     size_t align, unsigned int heap_id_mask,
 			     unsigned int flags, bool grab_handle)
@@ -846,16 +821,6 @@ static struct ion_handle *__ion_alloc(struct ion_client *client, size_t len,
 		trace_ion_alloc_fail(client->name, EINVAL, len,
 				align, heap_id_mask, flags);
 		return ERR_PTR(-EINVAL);
-	}
-
-	if (len / PAGE_SIZE > totalram_pages / 4) {
-		size_t pid_total_size = ion_buffer_get_total_size_by_pid(client);
-
-		if ((len + pid_total_size) / PAGE_SIZE > totalram_pages / 2) {
-			pr_err("%s: len %zu total %zu heap_id_mask %u flags %x\n",
-			       __func__, len, pid_total_size, heap_id_mask, flags);
-			return ERR_PTR(-EINVAL);
-		}
 	}
 
 	down_read(&dev->lock);
@@ -905,7 +870,7 @@ static struct ion_handle *__ion_alloc(struct ion_client *client, size_t len,
 	ret = ion_handle_add(client, handle);
 	mutex_unlock(&client->lock);
 	if (ret) {
-		ion_handle_put(handle);
+		ion_handle_put(client, handle);
 		handle = ERR_PTR(ret);
 		trace_ion_alloc_fail(client->name, (unsigned long ) buffer,
 					len, align, heap_id_mask, flags);
@@ -1120,8 +1085,9 @@ static int ion_debug_client_show(struct seq_file *s, void *unused)
 		return -EINVAL;
 	}
 
-	seq_printf(s, "%16.s %4.s %16.s %4.s %10.s %8.s %9.s\n",
-		   "task", "pid", "thread", "tid", "size", "# procs", "flag");
+	seq_printf(s, "%16.s %16.s %4.s %16.s %4.s %10.s %8.s %9.s\n",
+			"buffer", "task", "pid", "thread", "tid", "size",
+			"# procs", "flag");
 	seq_printf(s, "----------------------------------------------"
 			"--------------------------------------------\n");
 
@@ -1136,8 +1102,8 @@ static int ion_debug_client_show(struct seq_file *s, void *unused)
 			names[id] = buffer->heap->name;
 		sizes[id] += buffer->size;
 		sizes_pss[id] += (buffer->size / buffer->handle_count);
-		seq_printf(s, "%16.s %4u %16.s %4u %10zu %8d %9lx\n",
-			   buffer->task_comm, buffer->pid,
+		seq_printf(s, "%16p %16.s %4u %16.s %4u %10zu %8d %9lx\n",
+				buffer, buffer->task_comm, buffer->pid,
 				buffer->thread_comm, buffer->tid, buffer->size,
 				buffer->handle_count, buffer->flags);
 	}
@@ -1737,7 +1703,7 @@ struct ion_handle *ion_import_dma_buf(struct ion_client *client, int fd)
 	ret = ion_handle_add(client, handle);
 	mutex_unlock(&client->lock);
 	if (ret) {
-		ion_handle_put(handle);
+		ion_handle_put(client, handle);
 		handle = ERR_PTR(ret);
 	}
 
@@ -1993,7 +1959,7 @@ static long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (IS_ERR(handle))
 			return PTR_ERR(handle);
 		data.fd.fd = ion_share_dma_buf_fd(client, handle);
-		ion_handle_put(handle);
+		ion_handle_put(client, handle);
 		if (data.fd.fd < 0)
 			ret = data.fd.fd;
 		break;
@@ -2049,7 +2015,7 @@ static long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 	}
 	if (cleanup_handle)
-		ion_handle_put(cleanup_handle);
+		ion_handle_put(client,cleanup_handle);
 	return ret;
 }
 
@@ -2158,8 +2124,6 @@ static int ion_debug_heap_show(struct seq_file *s, void *unused)
 	seq_printf(s, "%16s %16zu\n", "total orphaned",
 		   total_orphaned_size);
 	seq_printf(s, "%16s %16zu\n", "total ", total_size);
-	seq_printf(s, "%16.s %16lu\n", "peak allocated",
-		   atomic_long_read(&heap->total_allocated_peak));
 	if (heap->flags & ION_HEAP_FLAG_DEFER_FREE)
 		seq_printf(s, "%16s %16zu\n", "deferred free",
 				heap->free_list_size);
@@ -2421,21 +2385,21 @@ static void ion_debug_event_show_one(struct seq_file *s,
 	case ION_EVENT_TYPE_ALLOC:
 		{
 		struct ion_event_alloc *data = &log->data.alloc;
-		seq_printf(s, "%8s  %pK  %18s  %11zd  ", "alloc",
+		seq_printf(s, "%8s  %p  %18s  %11zd  ", "alloc",
 				data->id, data->heap->name, data->size);
 		break;
 		}
 	case ION_EVENT_TYPE_FREE:
 		{
 		struct ion_event_free *data = &log->data.free;
-		seq_printf(s, "%8s  %pK  %18s  %11zd  ", "free",
+		seq_printf(s, "%8s  %p  %18s  %11zd  ", "free",
 				data->id, data->heap->name, data->size);
 		break;
 		}
 	case ION_EVENT_TYPE_MMAP:
 		{
 		struct ion_event_mmap *data = &log->data.mmap;
-		seq_printf(s, "%8s  %pK  %18s  %11zd  ", "mmap",
+		seq_printf(s, "%8s  %p  %18s  %11zd  ", "mmap",
 				data->id, data->heap->name, data->size);
 		break;
 		}
@@ -2450,7 +2414,7 @@ static void ion_debug_event_show_one(struct seq_file *s,
 	case ION_EVENT_TYPE_CLEAR:
 		{
 		struct ion_event_clear *data = &log->data.clear;
-		seq_printf(s, "%8s  %pK  %18s  %11zd  ", "clear",
+		seq_printf(s, "%8s  %p  %18s  %11zd  ", "clear",
 				data->id, data->heap->name, data->size);
 		break;
 		}

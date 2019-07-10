@@ -27,7 +27,6 @@ void s5p_mfc_cmd_host2risc(struct s5p_mfc_dev *dev, int cmd)
 	MFC_TRACE_DEV(">> CMD : %d, (dev:0x%lx, bits:%lx, owned:%d, wl:%d, trans:%d)\n",
 			cmd, dev->hwlock.dev, dev->hwlock.bits, dev->hwlock.owned_by_irq,
 			dev->hwlock.wl_count, dev->hwlock.transfer_owner);
-	MFC_TRACE_LOG_DEV("C%d", cmd);
 
 	trace_mfc_frame_start(dev->curr_ctx, cmd, 0, 0);
 	/* Reset RISC2HOST command except nal q stop command */
@@ -43,9 +42,6 @@ void s5p_mfc_cmd_host2risc(struct s5p_mfc_dev *dev, int cmd)
 		s5p_mfc_dbg_set_addr(dev);
 		s5p_mfc_dbg_enable(dev);
 	}
-
-	dev->last_cmd = cmd;
-	dev->last_cmd_time = ktime_to_timeval(ktime_get());
 
 	/* Issue the command */
 	MFC_WRITEL(cmd, S5P_FIMV_HOST2RISC_CMD);
@@ -104,12 +100,17 @@ void s5p_mfc_cmd_wakeup(struct s5p_mfc_dev *dev)
 }
 
 /* Open a new instance and get its number */
-void s5p_mfc_cmd_open_inst(struct s5p_mfc_ctx *ctx)
+int s5p_mfc_cmd_open_inst(struct s5p_mfc_ctx *ctx)
 {
-	struct s5p_mfc_dev *dev = ctx->dev;
+	struct s5p_mfc_dev *dev;
 
 	mfc_debug_enter();
 
+	if (!ctx) {
+		mfc_err_dev("no mfc context to run\n");
+		return -EINVAL;
+	}
+	dev = ctx->dev;
 	mfc_debug(2, "Requested codec mode: %d\n", ctx->codec_mode);
 
 	MFC_WRITEL(ctx->codec_mode, S5P_FIMV_CODEC_TYPE);
@@ -121,19 +122,30 @@ void s5p_mfc_cmd_open_inst(struct s5p_mfc_ctx *ctx)
 	s5p_mfc_cmd_host2risc(dev, S5P_FIMV_H2R_CMD_OPEN_INSTANCE);
 
 	mfc_debug_leave();
+
+	return 0;
 }
 
 /* Close instance */
-void s5p_mfc_cmd_close_inst(struct s5p_mfc_ctx *ctx)
+int s5p_mfc_cmd_close_inst(struct s5p_mfc_ctx *ctx)
 {
-	struct s5p_mfc_dev *dev = ctx->dev;
+	struct s5p_mfc_dev *dev;
 
 	mfc_debug_enter();
 
+	if (!ctx) {
+		mfc_err_dev("no mfc context to run\n");
+		return -EINVAL;
+	}
+	dev = ctx->dev;
+
 	MFC_WRITEL(ctx->inst_no, S5P_FIMV_INSTANCE_ID);
+
 	s5p_mfc_cmd_host2risc(dev, S5P_FIMV_H2R_CMD_CLOSE_INSTANCE);
 
 	mfc_debug_leave();
+
+	return 0;
 }
 
 int s5p_mfc_cmd_dpb_flush(struct s5p_mfc_ctx *ctx)

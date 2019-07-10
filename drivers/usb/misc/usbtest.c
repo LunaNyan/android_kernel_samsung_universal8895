@@ -135,7 +135,6 @@ get_endpoints(struct usbtest_dev *dev, struct usb_interface *intf)
 			case USB_ENDPOINT_XFER_INT:
 				if (dev->info->intr)
 					goto try_intr;
-				continue;
 			case USB_ENDPOINT_XFER_ISOC:
 				if (dev->info->iso)
 					goto try_iso;
@@ -185,13 +184,12 @@ found:
 			return tmp;
 	}
 
-	if (in)
+	if (in) {
 		dev->in_pipe = usb_rcvbulkpipe(udev,
 			in->desc.bEndpointAddress & USB_ENDPOINT_NUMBER_MASK);
-	if (out)
 		dev->out_pipe = usb_sndbulkpipe(udev,
 			out->desc.bEndpointAddress & USB_ENDPOINT_NUMBER_MASK);
-
+	}
 	if (iso_in) {
 		dev->iso_in = &iso_in->desc;
 		dev->in_iso_pipe = usb_rcvisocpipe(udev,
@@ -560,6 +558,7 @@ static void sg_timeout(unsigned long _req)
 {
 	struct usb_sg_request	*req = (struct usb_sg_request *) _req;
 
+	req->status = -ETIMEDOUT;
 	usb_sg_cancel(req);
 }
 
@@ -590,10 +589,8 @@ static int perform_sglist(
 		mod_timer(&sg_timer, jiffies +
 				msecs_to_jiffies(SIMPLE_IO_TIMEOUT));
 		usb_sg_wait(req);
-		if (!del_timer_sync(&sg_timer))
-			retval = -ETIMEDOUT;
-		else
-			retval = req->status;
+		del_timer_sync(&sg_timer);
+		retval = req->status;
 
 		/* FIXME check resulting data pattern */
 

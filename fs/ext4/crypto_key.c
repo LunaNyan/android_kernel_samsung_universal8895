@@ -18,7 +18,6 @@
 #include "ext4.h"
 #include "xattr.h"
 
-#ifndef CONFIG_EXT4_SEC_CRYPTO_EXTENSION
 static void derive_crypt_complete(struct crypto_async_request *req, int rc)
 {
 	struct ext4_completion_result *ecr = req->data;
@@ -31,16 +30,16 @@ static void derive_crypt_complete(struct crypto_async_request *req, int rc)
 }
 
 /**
- * ext4_derive_key_v1() - Derive a key using AES-128-ECB
+ * ext4_derive_key_aes() - Derive a key using AES-128-ECB
  * @deriving_key: Encryption key used for derivation.
  * @source_key:   Source key to which to apply derivation.
  * @derived_key:  Derived key.
  *
- * Return: 0 on success, -errno on failure
+ * Return: Zero on success; non-zero otherwise.
  */
-static int ext4_derive_key_v1(const char deriving_key[EXT4_AES_128_ECB_KEY_SIZE],
-			      const char source_key[EXT4_AES_256_XTS_KEY_SIZE],
-			      char derived_key[EXT4_AES_256_XTS_KEY_SIZE])
+int ext4_derive_key_aes(char deriving_key[EXT4_AES_128_ECB_KEY_SIZE],
+			char source_key[EXT4_AES_256_XTS_KEY_SIZE],
+			char derived_key[EXT4_AES_256_XTS_KEY_SIZE])
 {
 	int res = 0;
 	struct ablkcipher_request *req = NULL;
@@ -85,100 +84,15 @@ out:
 	return res;
 }
 
-/**
- * ext4_derive_key_v2() - Derive a key non-reversibly
- * @nonce: the nonce associated with the file
- * @master_key: the master key referenced by the file
- * @derived_key: (output) the resulting derived key
- *
- * This function computes the following:
- *	 derived_key[0:127]   = AES-256-ENCRYPT(master_key[0:255], nonce)
- *	 derived_key[128:255] = AES-256-ENCRYPT(master_key[0:255], nonce ^ 0x01)
- *	 derived_key[256:383] = AES-256-ENCRYPT(master_key[256:511], nonce)
- *	 derived_key[384:511] = AES-256-ENCRYPT(master_key[256:511], nonce ^ 0x01)
- *
- * 'nonce ^ 0x01' denotes flipping the low order bit of the last byte.
- *
- * Unlike the v1 algorithm, the v2 algorithm is "non-reversible", meaning that
- * compromising a derived key does not also compromise the master key.
- *
- * Return: 0 on success, -errno on failure
- */
-static int ext4_derive_key_v2(const char nonce[EXT4_KEY_DERIVATION_NONCE_SIZE],
-			      const char master_key[EXT4_MAX_KEY_SIZE],
-			      char derived_key[EXT4_MAX_KEY_SIZE])
-{
-	const int noncelen = EXT4_KEY_DERIVATION_NONCE_SIZE;
-	struct crypto_cipher *tfm;
-	int err;
-	int i;
-
-	/*
-	 * Since we only use each transform for a small number of encryptions,
-	 * requesting just "aes" turns out to be significantly faster than
-	 * "ecb(aes)", by about a factor of two.
-	 */
-	tfm = crypto_alloc_cipher("aes", 0, 0);
-	if (IS_ERR(tfm))
-		return PTR_ERR(tfm);
-
-	BUILD_BUG_ON(4 * EXT4_KEY_DERIVATION_NONCE_SIZE != EXT4_MAX_KEY_SIZE);
-	BUILD_BUG_ON(2 * EXT4_AES_256_ECB_KEY_SIZE != EXT4_MAX_KEY_SIZE);
-	for (i = 0; i < 2; i++) {
-		memcpy(derived_key, nonce, noncelen);
-		memcpy(derived_key + noncelen, nonce, noncelen);
-		derived_key[2 * noncelen - 1] ^= 0x01;
-		err = crypto_cipher_setkey(tfm, master_key,
-					   EXT4_AES_256_ECB_KEY_SIZE);
-		if (err)
-			break;
-		crypto_cipher_encrypt_one(tfm, derived_key, derived_key);
-		crypto_cipher_encrypt_one(tfm, derived_key + noncelen,
-					  derived_key + noncelen);
-		master_key += EXT4_AES_256_ECB_KEY_SIZE;
-		derived_key += 2 * noncelen;
-	}
-	crypto_free_cipher(tfm);
-	return err;
-}
-
-/**
- * ext4_derive_key() - Derive a per-file key from a nonce and master key
- * @ctx: the encryption context associated with the file
- * @master_key: the master key referenced by the file
- * @derived_key: (output) the resulting derived key
- *
- * Return: 0 on success, -errno on failure
- */
-static int ext4_derive_key(const struct ext4_encryption_context *ctx,
-			   const char master_key[EXT4_MAX_KEY_SIZE],
-			   char derived_key[EXT4_MAX_KEY_SIZE])
-{
-	BUILD_BUG_ON(EXT4_ESTIMATED_NONCE_SIZE != EXT4_KEY_DERIVATION_NONCE_SIZE);
-	BUILD_BUG_ON(EXT4_AES_256_XTS_KEY_SIZE != EXT4_MAX_KEY_SIZE);
-
-	/*
-	 * Although the key derivation algorithm is logically independent of the
-	 * choice of encryption modes, in this kernel it is bundled with HEH
-	 * encryption of filenames, which is another crypto improvement that
-	 * requires an on-disk format change and requires userspace to specify
-	 * different encryption policies.
-	 */
-	if (ctx->filenames_encryption_mode == EXT4_ENCRYPTION_MODE_AES_256_HEH)
-		return ext4_derive_key_v2(ctx->nonce, master_key, derived_key);
-	else
-		return ext4_derive_key_v1(ctx->nonce, master_key, derived_key);
-}
-#endif
-
 void ext4_free_crypt_info(struct ext4_crypt_info *ci)
 {
 	if (!ci)
 		return;
 
+	if (ci->ci_keyring_key)
+		key_put(ci->ci_keyring_key);
 	if (!ci->private_enc_mode)
 		crypto_free_ablkcipher(ci->ci_ctfm);
-
 	kmem_cache_free(ext4_crypt_info_cachep, ci);
 }
 
@@ -204,11 +118,11 @@ static inline int __ext4_get_fek(char *nonce, char *src_key, char *fe_key)
 #ifdef CONFIG_EXT4_SEC_CRYPTO_EXTENSION
 	return ext4_sec_get_key_aes(nonce, src_key, fe_key);
 #else
-	return ext4_derive_key(nonce, src_key, fe_key);
+	return ext4_derive_key_aes(nonce, src_key, fe_key);
 #endif
 }
 
-int ext4_get_encryption_info(struct inode *inode)
+int _ext4_get_encryption_info(struct inode *inode)
 {
 	struct ext4_inode_info *ei = EXT4_I(inode);
 	struct ext4_crypt_info *crypt_info;
@@ -225,12 +139,21 @@ int ext4_get_encryption_info(struct inode *inode)
 	char mode;
 	int res;
 
-	if (ei->i_crypt_info)
-		return 0;
+	if (!ext4_read_workqueue) {
+		res = ext4_init_crypto();
+		if (res)
+			return res;
+	}
 
-	res = ext4_init_crypto();
-	if (res)
-		return res;
+retry:
+	crypt_info = ACCESS_ONCE(ei->i_crypt_info);
+	if (crypt_info) {
+		if (!crypt_info->ci_keyring_key ||
+		    key_validate(crypt_info->ci_keyring_key) == 0)
+			return 0;
+		ext4_free_encryption_info(inode, crypt_info);
+		goto retry;
+	}
 
 	res = ext4_xattr_get(inode, EXT4_XATTR_INDEX_ENCRYPTION,
 				 EXT4_XATTR_NAME_ENCRYPTION_CONTEXT,
@@ -255,7 +178,6 @@ int ext4_get_encryption_info(struct inode *inode)
 	crypt_info->ci_filename_mode = ctx.filenames_encryption_mode;
 #ifdef CONFIG_FMP_EXT4CRYPT_FS
 	if (ctx.filenames_encryption_mode == FMP_ENCRYPTION_MODE_AES_256_XTS ||
-			ctx.filenames_encryption_mode == EXT4_ENCRYPTION_MODE_PRIVATE ||
 			ctx.filenames_encryption_mode == FMP_ENCRYPTION_MODE_AES_256_CBC) {
 		printk(KERN_WARNING "FMP doesn't support filename encryption mode. \
 				Forcely, change it to AES_256_CTS mode\n");
@@ -263,6 +185,7 @@ int ext4_get_encryption_info(struct inode *inode)
 	}
 #endif /* ifdef CONFIG_FMP_EXT4CRYPT_FS */
 	crypt_info->ci_ctfm = NULL;
+	crypt_info->ci_keyring_key = NULL;
 	memcpy(crypt_info->ci_master_key, ctx.master_key_descriptor,
 	       sizeof(crypt_info->ci_master_key));
 	if (S_ISREG(inode->i_mode))
@@ -282,7 +205,6 @@ int ext4_get_encryption_info(struct inode *inode)
 		break;
 #ifdef CONFIG_FMP_EXT4CRYPT_FS
 	case FMP_ENCRYPTION_MODE_AES_256_XTS:
-	case EXT4_ENCRYPTION_MODE_PRIVATE:
 		cipher_str = "xts(fmp)";
 		inode->i_mapping->private_algo_mode = FMP_XTS_ALGO_MODE;
 		break;
@@ -291,9 +213,6 @@ int ext4_get_encryption_info(struct inode *inode)
 		inode->i_mapping->private_algo_mode = FMP_CBC_ALGO_MODE;
 		break;
 #endif /* ifdef CONFIG_FMP_EXT4CRYPT_FS */
-	case EXT4_ENCRYPTION_MODE_AES_256_HEH:
-		cipher_str = "heh(aes)";
-		break;
 	default:
 		printk_once(KERN_WARNING
 			    "ext4: unsupported key mode %d (ino %u)\n",
@@ -323,6 +242,7 @@ int ext4_get_encryption_info(struct inode *inode)
 		keyring_key = NULL;
 		goto out;
 	}
+	crypt_info->ci_keyring_key = keyring_key;
 	if (keyring_key->type != &key_type_logon) {
 		printk_once(KERN_WARNING
 			     "ext4: key type must be logon\n");
@@ -331,12 +251,6 @@ int ext4_get_encryption_info(struct inode *inode)
 	}
 	down_read(&keyring_key->sem);
 	ukp = user_key_payload(keyring_key);
-	if (!ukp) {
-		/* key was revoked before we acquired its semaphore */
-		res = -EKEYREVOKED;
-		up_read(&keyring_key->sem);
-		goto out;
-	}
 	if (ukp->datalen != sizeof(struct ext4_encryption_key)) {
 		res = -EINVAL;
 		up_read(&keyring_key->sem);
@@ -359,18 +273,8 @@ int ext4_get_encryption_info(struct inode *inode)
 		goto out;
 got_key:
 	memset(crypt_info->raw_key, 0, EXT4_MAX_KEY_SIZE);
-#ifdef CONFIG_FMP_EXT4CRYPT_FS
-	/* hack to support fbe on gsi */
-	if (S_ISREG(inode->i_mode) && (crypt_info->ci_data_mode == EXT4_ENCRYPTION_MODE_AES_256_XTS))
-	    goto private_crypt;
-#endif
-
 	if (mode == FMP_ENCRYPTION_MODE_AES_256_XTS ||
-			mode == EXT4_ENCRYPTION_MODE_PRIVATE ||
 			mode == FMP_ENCRYPTION_MODE_AES_256_CBC) {
-#ifdef CONFIG_FMP_EXT4CRYPT_FS
-private_crypt:
-#endif
 		crypt_info->private_enc_mode = FMP_FILE_ENC_MODE;
 		memcpy(crypt_info->raw_key, raw_key, ext4_encryption_key_size(mode));
 		memset(inode->i_mapping->key, 0, KEY_MAX_SIZE);
@@ -396,12 +300,16 @@ private_crypt:
 			goto out;
 	}
 	inode->i_mapping->private_enc_mode = crypt_info->private_enc_mode;
-	if (cmpxchg(&ei->i_crypt_info, NULL, crypt_info) == NULL)
-		crypt_info = NULL;
+	memzero_explicit(raw_key, sizeof(raw_key));
+	if (cmpxchg(&ei->i_crypt_info, NULL, crypt_info) != NULL) {
+		ext4_free_crypt_info(crypt_info);
+		goto retry;
+	}
+	return 0;
+
 out:
 	if (res == -ENOKEY)
 		res = 0;
-	key_put(keyring_key);
 	ext4_free_crypt_info(crypt_info);
 	memzero_explicit(raw_key, sizeof(raw_key));
 	return res;

@@ -167,31 +167,6 @@ typedef enum {
 	GPU_CONFIG_LIST_END,
 } gpu_config_list;
 
-typedef enum {
-	GPU_JOB_CONFIG_FAULT,
-	GPU_JOB_POWER_FAULT,
-	GPU_JOB_READ_FAULT,
-	GPU_JOB_WRITE_FAULT,
-	GPU_JOB_AFFINITY_FAULT,
-	GPU_JOB_BUS_FAULT,
-	GPU_DATA_INVALIDATE_FAULT,
-	GPU_TILE_RANGE_FAULT,
-	GPU_OUT_OF_MEMORY_FAULT,
-	GPU_DELAYED_BUS_FAULT,
-	GPU_SHAREABILITY_FAULT,
-	GPU_MMU_TRANSLATION_FAULT,
-	GPU_MMU_PERMISSION_FAULT,
-	GPU_MMU_TRANSTAB_BUS_FAULT,
-	GPU_MMU_ACCESS_FLAG_FAULT,
-	GPU_MMU_ADDRESS_SIZE_FAULT,
-	GPU_MMU_MEMORY_ATTRIBUTES_FAULT,
-	GPU_UNKNOWN,
-	GPU_SOFT_STOP,
-	GPU_HARD_STOP,
-	GPU_RESET,
-	GPU_EXCEPTION_LIST_END,
-} gpu_excention_type;
-
 typedef struct _gpu_attribute {
 	int id;
 	uintptr_t data;
@@ -232,9 +207,7 @@ struct exynos_context {
 	struct mutex gpu_clock_lock;
 	struct mutex gpu_dvfs_handler_lock;
 	spinlock_t gpu_dvfs_spinlock;
-#ifdef CONFIG_SCHED_HMP
-	struct mutex gpu_sched_hmp_lock;
-#endif
+
 	/* clock & voltage related variables */
 	int clk_g3d_status;
 #ifdef CONFIG_MALI_RT_PM
@@ -313,7 +286,6 @@ struct exynos_context {
 	bool early_clk_gating_status;
 	bool dvs_status;
 	bool dvs_is_enabled;
-	bool inter_frame_pm_feature;
 	bool inter_frame_pm_status;
 	bool inter_frame_pm_is_poweron;
 
@@ -349,8 +321,9 @@ struct exynos_context {
 	int debug_level;
 	int trace_level;
 
-	int fault_count;
-	int gpu_exception_count[GPU_EXCEPTION_LIST_END];
+	int reset_count;
+	int data_invalid_fault_count;
+	int mmu_fault_count;
 	int balance_retry_count[BMAX_RETRY_CNT];
 	gpu_attribute *attrib;
 	int mo_min_clock;
@@ -364,10 +337,6 @@ struct exynos_context {
 
 #ifdef CONFIG_MALI_ASV_CALIBRATION_SUPPORT
 	bool gpu_auto_cali_status;
-#endif
-
-#ifdef CONFIG_SCHED_HMP
-	bool ctx_need_qos;
 #endif
 };
 

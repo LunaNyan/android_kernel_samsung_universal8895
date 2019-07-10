@@ -1418,10 +1418,8 @@ static int sixaxis_set_operational_usb(struct hid_device *hdev)
 	}
 
 	ret = hid_hw_output_report(hdev, buf, 1);
-	if (ret < 0) {
-		hid_info(hdev, "can't set operational mode: step 3, ignoring\n");
-		ret = 0;
-	}
+	if (ret < 0)
+		hid_err(hdev, "can't set operational mode: step 3\n");
 
 out:
 	kfree(buf);

@@ -478,8 +478,7 @@ errout:
 bool ext4_valid_contents_enc_mode(uint32_t mode)
 {
 #ifdef CONFIG_FMP_EXT4CRYPT_FS
-	return (mode == EXT4_ENCRYPTION_MODE_AES_256_XTS) || (mode == FMP_ENCRYPTION_MODE_AES_256_XTS) ||
-		      (mode == EXT4_ENCRYPTION_MODE_PRIVATE);
+	return (mode == EXT4_ENCRYPTION_MODE_AES_256_XTS) || (mode == FMP_ENCRYPTION_MODE_AES_256_XTS);
 #else
 	return (mode == EXT4_ENCRYPTION_MODE_AES_256_XTS);
 #endif
@@ -519,6 +518,11 @@ static int ext4_d_revalidate(struct dentry *dentry, unsigned int flags)
 		return 0;
 	}
 	ci = EXT4_I(d_inode(dir))->i_crypt_info;
+	if (ci && ci->ci_keyring_key &&
+	    (ci->ci_keyring_key->flags & ((1 << KEY_FLAG_INVALIDATED) |
+					  (1 << KEY_FLAG_REVOKED) |
+					  (1 << KEY_FLAG_DEAD))))
+		ci = NULL;
 
 	/* this should eventually be an flag in d_flags */
 	cached_with_key = dentry->d_fsdata != NULL;

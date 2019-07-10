@@ -343,8 +343,6 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 	char *name;
 	int ret;
 
-	pr_info("%s: +++\n", __func__);
-
 	name = kstrdup(page, GFP_KERNEL);
 	if (!name)
 		return -ENOMEM;
@@ -489,27 +487,29 @@ static int config_usb_cfg_link(
 	}
 	/* usb tethering */
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
-	if (fi->set_inst_eth_addr) {
-		list_for_each_entry(gs, &gi->string_list, list) {
-			src = gs->serialnumber;
-		}
+	list_for_each_entry(gs, &gi->string_list, list) {
+		src = gs->serialnumber;
+	}
 
-		if (src) {
-			for (i = 0; i < ETH_ALEN; i++)
-				ethaddr[i] = 0;
-			/* create a fake MAC address from our serial number.
-			 * first byte is 0x02 to signify locally administered.
-			 */
-			ethaddr[0] = 0x02;
-			for (i = 0; (i < 256) && *src; i++) {
-				/* XOR the USB serial across the remaining bytes */
-				ethaddr[i % (ETH_ALEN - 1) + 1] ^= *src++;
-			}
+	if (!ethaddr[0])
+	{
 
-			fi->set_inst_eth_addr(fi, ethaddr);
+		for (i = 0; i < ETH_ALEN; i++)
+			ethaddr[i] = 0;
+		/* create a fake MAC address from our serial number.
+		 * first byte is 0x02 to signify locally administered.
+		 */
+		ethaddr[0] = 0x02;
+		for (i = 0; (i < 256) && *src; i++) {
+			/* XOR the USB serial across the remaining bytes */
+			ethaddr[i % (ETH_ALEN - 1) + 1] ^= *src++;
 		}
 	}
+
+	if (fi->set_inst_eth_addr)
+		fi->set_inst_eth_addr(fi, ethaddr);
 #endif
+
 	f = usb_get_function(fi);
 	if (f == NULL) {
 		/* Are we trying to symlink PTP without MTP function? */
@@ -1346,7 +1346,7 @@ static void purge_configs_funcs(struct gadget_info *gi)
 			list_move_tail(&f->list, &cfg->func_list);
 			if (f->unbind) {
 				dev_err(&gi->cdev.gadget->dev, "unbind function"
-						" '%s'/%pK\n", f->name, f);
+						" '%s'/%p\n", f->name, f);
 				f->unbind(c, f);
 			}
 		}
@@ -1517,9 +1517,6 @@ static void android_work(struct work_struct *data)
 	unsigned long flags;
 	bool uevent_sent = false;
 
-	if (!android_device && IS_ERR(android_device))
-		return;
-
 	spin_lock_irqsave(&cdev->lock, flags);
 	if (cdev->config)
 		status[1] = true;
@@ -1543,7 +1540,11 @@ static void android_work(struct work_struct *data)
 		store_usblog_notify(NOTIFY_USBSTATE, (void *)connected[0], NULL);
 #endif
 #ifdef CONFIG_USB_TYPEC_MANAGER_NOTIFIER
-		set_usb_enumeration_state(cdev->desc.bcdUSB);
+		if (cdev->desc.bcdUSB == 0x310) {
+			set_usb_enumeration_state(0x310); // Super-Speed
+		} else {
+			set_usb_enumeration_state(0x210); // High-Speed
+		}
 #endif
 	}
 
@@ -1568,7 +1569,7 @@ static void android_work(struct work_struct *data)
 	}
 
 	if (!uevent_sent) {
-		pr_info("%s: did not send uevent (%d %d %pK)\n", __func__,
+		pr_info("%s: did not send uevent (%d %d %p)\n", __func__,
 			gi->connected, gi->sw_connected, cdev->config);
 	}
 }
@@ -1666,18 +1667,6 @@ static void android_disconnect(struct usb_gadget *gadget)
 {
 	struct usb_composite_dev        *cdev = get_gadget_data(gadget);
 	struct gadget_info *gi = container_of(cdev, struct gadget_info, cdev);
-
-	/* FIXME: There's a race between usb_gadget_udc_stop() which is likely
-	 * to set the gadget driver to NULL in the udc driver and this drivers
-	 * gadget disconnect fn which likely checks for the gadget driver to
-	 * be a null ptr. It happens that unbind (doing set_gadget_data(NULL))
-	 * is called before the gadget driver is set to NULL and the udc driver
-	 * calls disconnect fn which results in cdev being a null ptr.
-	 */
-	if (cdev == NULL) {
-		WARN(1, "%s: gadget driver already disconnected\n", __func__);
-		return;
-	}
 
 	/* accessory HID support can be active while the
 		accessory function is not actually enabled,
@@ -1902,7 +1891,7 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 		cdev->next_string_id = 0;
 #endif
 
-		if (!dev->udc_name && dev->prev_func_list) {
+		if (!dev->udc_name) {
 			/* config gadget is not bined yet */
 			/* we need to call usb function bind */
 			list_for_each_entry(c, &cdev->configs, list) {
@@ -1921,17 +1910,14 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 				ret = usb_udc_attach_driver(name, &dev->composite.gadget_driver);
 				if (ret) {
 					pr_info("usb: %s: configfs gadget bind fails: %d\n", __func__, ret);
-					kfree(name);
-				} else {
-					dev->udc_name = name;
-					gadget = cdev->gadget;
 				}
+				dev->udc_name = name;
+				gadget = cdev->gadget;
 			}
 		}	
 
 		if (!gadget) {
-			pr_info("usb: %s: Gadget is NULL\n", __func__);
-			mutex_unlock(&dev->lock);
+			pr_info("usb: %s: Gadget is NULL: %p\n", __func__, gadget);
 			return -ENODEV;
 		}
 
@@ -2032,18 +2018,15 @@ static struct device_attribute *android_usb_attributes[] = {
 
 static int android_device_create(struct gadget_info *gi)
 {
-	struct device *device;
 	struct device_attribute **attrs;
 	struct device_attribute *attr;
 
 	INIT_WORK(&gi->work, android_work);
-	device = device_create(android_class, NULL,
+	android_device = device_create(android_class, NULL,
 				MKDEV(0, 0), NULL, "android0");
+	if (IS_ERR(android_device))
+		return PTR_ERR(android_device);
 
-	if (IS_ERR(device))
-		return PTR_ERR(device);
-
-	android_device = device;
 	dev_set_drvdata(android_device, gi);
 
 	attrs = android_usb_attributes;
@@ -2132,10 +2115,8 @@ static struct config_group *gadgets_make(
 	if (!gi->composite.gadget_driver.function)
 		goto err;
 
-	if (android_device_create(gi) < 0) {
-		kfree(gi->composite.gadget_driver.function);
+	if (android_device_create(gi) < 0)
 		goto err;
-	}
 
 	config_group_init_type_name(&gi->group, name,
 				&gadget_root_type);
@@ -2176,9 +2157,7 @@ void unregister_gadget_item(struct config_item *item)
 {
 	struct gadget_info *gi = to_gadget_info(item);
 
-	mutex_lock(&gi->lock);
 	unregister_gadget(gi);
-	mutex_unlock(&gi->lock);
 }
 EXPORT_SYMBOL_GPL(unregister_gadget_item);
 

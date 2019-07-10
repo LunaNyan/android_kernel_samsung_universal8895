@@ -24,14 +24,6 @@
 #define TOUCH_OPEN_DWORK_TIME 10
 #endif
 
-/*
- * support_feature
- * bit value should be made a promise with InputFramework.
- */
-#define INPUT_FEATURE_SUPPORT_AOT			(1 << 0) /* Double tap wakeup settings */
-#define INPUT_FEATURE_SUPPORT_PRESSURE			(1 << 1) /* homekey pressure */
-#define INPUT_FEATURE_SUPPORT_SYNC_RR120		(1 << 2) /* sync reportrate 120hz */
-
 #define FIRMWARE_IC					"fts_ic"
 #define FTS_MAX_FW_PATH					64
 #define FTS_TS_DRV_NAME					"fts_touch"
@@ -189,7 +181,6 @@
 
 #define FTS_CMD_STRING_ACCESS				0x3000
 #define FTS_CMD_NOTIFY					0xC0
-#define FTS_CMD_OFFSET_PRESSURE_DATA			0x5A
 #define FTS_CMD_OFFSET_PRESSURE_LEVEL			0x5E
 #define FTS_CMD_OFFSET_PRESSURE_THD_HIGH		0x84
 #define FTS_CMD_OFFSET_PRESSURE_THD_LOW			0x86
@@ -200,7 +191,6 @@
 
 #define FTS_STRING_EVENT_SPAY				(1 << 1)
 #define FTS_STRING_EVENT_AOD_TRIGGER			(1 << 2)
-#define FTS_STRING_EVENT_SINGLETAP			(1 << 3)
 #define FTS_STRING_EVENT_PRESSURE_TOUCHED		(1 << 6)
 #define FTS_STRING_EVENT_PRESSURE_RELEASED		(1 << 7)
 
@@ -213,8 +203,7 @@
 
 #define FTS_MODE_SPAY					(1 << 1)
 #define FTS_MODE_AOD					(1 << 2)
-#define FTS_MODE_SINGLETAP				(1 << 3)
-#define FTS_MODE_PRESSURE				(1 << 6)
+#define FTS_MODE_PRESSURE					(1 << 6)
 
 #define FTS_BOOT_CRC_OKAY			0
 #define FTS_BOOT_CRC_FAIL			1
@@ -244,16 +233,11 @@
 #define PAT_MAX_EXT 			0xF5
 #endif
 
-/* TSP PANEL CHANNEL NUMBER */
-#define TOUCH_TX_CHANNEL_NUM			20
-#define TOUCH_RX_CHANNEL_NUM			40
-
 #ifdef FTS_SUPPORT_TOUCH_KEY
 /* TSP Key Feature*/
 #define KEY_PRESS       1
 #define KEY_RELEASE     0
 #define TOUCH_KEY_NULL	0
-
 
 /* support 2 touch keys */
 #define TOUCH_KEY_RECENT		0x01
@@ -402,7 +386,7 @@ enum {
 	SPECIAL_EVENT_TYPE_SPAY			= 0x04,
 	SPECIAL_EVENT_TYPE_PRESSURE_TOUCHED	= 0x05,
 	SPECIAL_EVENT_TYPE_PRESSURE_RELEASED	= 0x06,
-	SPECIAL_EVENT_TYPE_SINGLETAP		= 0x08,
+	SPECIAL_EVENT_TYPE_AOD			= 0x08,
 	SPECIAL_EVENT_TYPE_AOD_PRESS		= 0x09,
 	SPECIAL_EVENT_TYPE_AOD_LONGPRESS	= 0x0A,
 	SPECIAL_EVENT_TYPE_AOD_DOUBLETAB	= 0x0B,
@@ -459,7 +443,7 @@ struct fts_i2c_platform_data {
 	bool support_dex;
 	int max_x;
 	int max_y;
-	int always_lpmode;
+	int use_pressure;
 	unsigned char panel_revision;	/* to identify panel info */
 	int pat_function;	/*  copyed by dt, select function for suitable process  - pat_control */
 	int afe_base;		/*  set f/w version when afe is fixed			- pat_control */
@@ -468,8 +452,6 @@ struct fts_i2c_platform_data {
 	const char *model_name;
 	const char *regulator_dvdd;
 	const char *regulator_avdd;
-
-	const char *support_pressure;
 
 	struct pinctrl *pinctrl;
 	struct pinctrl_state	*pins_default;
@@ -513,7 +495,6 @@ struct fts_ts_info {
 	int irq;
 	int irq_type;
 	bool irq_enabled;
-	bool force_release;
 	struct fts_i2c_platform_data *board;
 #ifdef FTS_SUPPORT_TA_MODE
 	void (*register_cb)(void *);
@@ -543,9 +524,7 @@ struct fts_ts_info {
 	char *dex_name;
 	u8 brush_mode;
 	u8 touchable_area;
-	u8 pressure_setting_mode;
 
-	s8 pressure_caller_id;
 	unsigned char lowpower_flag;
 	bool deepsleep_mode;
 	bool wirelesscharger_mode;
@@ -674,23 +653,6 @@ struct fts_ts_info {
 	unsigned int sum_z_value;
 	unsigned char pressure_cal_base;
 	unsigned char pressure_cal_delta;
-
-	int prox_power_off;
-
-	int max_baseline;
-	int max_baseline_tx;
-	int max_baseline_rx;
-	int min_baseline;
-	int min_baseline_tx;
-	int min_baseline_rx;
-
-	/* average value for each channel */
-	int baseline_tx[TOUCH_TX_CHANNEL_NUM];
-	int baseline_rx[TOUCH_RX_CHANNEL_NUM];
-
-	/* max - min value for each channel */
-	short baseline_tx_delta[TOUCH_TX_CHANNEL_NUM];
-	short baseline_rx_delta[TOUCH_RX_CHANNEL_NUM];
 
 	int (*stop_device)(struct fts_ts_info *info, bool lpmode);
 	int (*start_device)(struct fts_ts_info *info);

@@ -295,6 +295,8 @@ static int cs47l92_adsp_power_ev(struct snd_soc_dapm_widget *w,
 	unsigned int freq;
 	int ret;
 
+	dev_err(madera->dev, "Bad cs47l92_adsp_power_ev\n");
+
 	ret = regmap_read(madera->regmap, MADERA_DSP_CLOCK_2, &freq);
 	if (ret != 0) {
 		dev_err(madera->dev,
@@ -507,8 +509,6 @@ MADERA_RATE_ENUM("ASRC1 Rate 1", madera_asrc1_bidir_rate[0]),
 MADERA_RATE_ENUM("ASRC1 Rate 2", madera_asrc1_bidir_rate[1]),
 
 SOC_ENUM("AUXPDM1 Rate", cs47l92_auxpdm_freq_enum),
-
-WM_ADSP2_PRELOAD_SWITCH("DSP1", 1),
 
 MADERA_MIXER_CONTROLS("DSP1L", MADERA_DSP1LMIX_INPUT_1_SOURCE),
 MADERA_MIXER_CONTROLS("DSP1R", MADERA_DSP1RMIX_INPUT_1_SOURCE),
@@ -821,27 +821,6 @@ static const unsigned int cs47l92_aec_loopback_values[] = {
 	0, 1, 2, 3, 4, 5, 8, 9
 };
 
-static int cs47l92_auxpdm_ena(struct snd_soc_dapm_widget *w,
-			      struct snd_kcontrol *kcontrol, int event)
-{
-	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
-	struct madera_priv *priv = snd_soc_codec_get_drvdata(codec);
-	struct madera *madera = priv->madera;
-
-	switch (event) {
-	case SND_SOC_DAPM_PRE_PMU:
-		dev_info(madera->dev, "AUXPDM Enable\n");
-		break;
-	case SND_SOC_DAPM_PRE_PMD:
-		dev_info(madera->dev, "AUXPDM Disable\n");
-		break;
-	default:
-		break;
-	}
-
-	return 0;
-}
-
 static const struct soc_enum cs47l92_aec_loopback =
 	SOC_VALUE_ENUM_SINGLE(MADERA_DAC_AEC_CONTROL_1,
 			      MADERA_AEC1_LOOPBACK_SRC_SHIFT, 0xf,
@@ -1025,10 +1004,8 @@ SND_SOC_DAPM_PGA("SPD1TX2", MADERA_SPD1_TX_CONTROL,
 SND_SOC_DAPM_OUT_DRV("SPD1", MADERA_SPD1_TX_CONTROL,
 		     MADERA_SPD1_ENA_SHIFT, 0, NULL, 0),
 
-SND_SOC_DAPM_SWITCH_E("AUXPDM1 Output", MADERA_AUXPDM1_CTRL_0,
-		      MADERA_AUXPDM1_ENABLE_SHIFT, 0, &cs47l92_auxpdm1_switch,
-		      cs47l92_auxpdm_ena,
-		      SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_PRE_PMD),
+SND_SOC_DAPM_SWITCH("AUXPDM1 Output", MADERA_AUXPDM1_CTRL_0,
+		    MADERA_AUXPDM1_ENABLE_SHIFT, 0, &cs47l92_auxpdm1_switch),
 
 /* mux_in widgets : arranged in the order of sources
    specified in MADERA_MIXER_INPUT_ROUTES */
@@ -1447,15 +1424,7 @@ static const struct snd_soc_dapm_route cs47l92_dapm_routes[] = {
 	{ "IN4L", NULL, "SYSCLK" },
 	{ "IN4R", NULL, "SYSCLK" },
 
-	{ "ASRC1IN1L", NULL, "SYSCLK" },
-	{ "ASRC1IN1R", NULL, "SYSCLK" },
-	{ "ASRC1IN2L", NULL, "SYSCLK" },
-	{ "ASRC1IN2R", NULL, "SYSCLK" },
-
-	{ "ASRC1IN1L", NULL, "ASYNCCLK" },
-	{ "ASRC1IN1R", NULL, "ASYNCCLK" },
-	{ "ASRC1IN2L", NULL, "ASYNCCLK" },
-	{ "ASRC1IN2R", NULL, "ASYNCCLK" },
+	{ "DSP1", NULL, "DSPCLK"},
 
 	{ "MICBIAS1", NULL, "MICVDD" },
 	{ "MICBIAS2", NULL, "MICVDD" },
@@ -1557,8 +1526,6 @@ static const struct snd_soc_dapm_route cs47l92_dapm_routes[] = {
 	{ "Slim1 Capture", NULL, "SYSCLK" },
 	{ "Slim2 Capture", NULL, "SYSCLK" },
 	{ "Slim3 Capture", NULL, "SYSCLK" },
-
-	{ "Audio Trace DSP", NULL, "DSP1" },
 
 	{ "IN1L Mux", "A", "IN1AL" },
 	{ "IN1L Mux", "B", "IN1BL" },
@@ -1859,76 +1826,13 @@ static struct snd_soc_dai_driver cs47l92_dai[] = {
 		 },
 		.ops = &madera_simple_dai_ops,
 	},
-	{
-		.name = "cs47l92-cpu-trace",
-		.capture = {
-			.stream_name = "Audio Trace CPU",
-			.channels_min = 1,
-			.channels_max = 2,
-			.rates = MADERA_RATES,
-			.formats = MADERA_FORMATS,
-		},
-		.compress_new = snd_soc_new_compress,
-	},
-	{
-		.name = "cs47l92-dsp-trace",
-		.capture = {
-			.stream_name = "Audio Trace DSP",
-			.channels_min = 1,
-			.channels_max = 2,
-			.rates = MADERA_RATES,
-			.formats = MADERA_FORMATS,
-		},
-	},
 };
 
 static irqreturn_t madera_irq_boot_done(int irq, void *data)
 {
 	struct madera *madera = data;
-	unsigned int val = 0;
-	int ret;
 
-	ret = regmap_read(madera->regmap, MADERA_CTRL_SCRATCH, &val);
-	if (ret != 0)
-		dev_warn(madera->dev, "Failed to read scratch reg: %d\n", ret);
-
-	dev_warn(madera->dev, "Boot done: 0x%x\n", val);
-
-	return IRQ_HANDLED;
-}
-
-static int cs47l92_open(struct snd_compr_stream *stream)
-{
-	struct snd_soc_pcm_runtime *rtd = stream->private_data;
-	struct cs47l92 *cs47l92 = snd_soc_codec_get_drvdata(rtd->codec);
-	struct madera_priv *priv = &cs47l92->core;
-	struct madera *madera = priv->madera;
-	int n_adsp;
-
-	if (strcmp(rtd->codec_dai->name, "cs47l92-dsp-trace") == 0) {
-		n_adsp = 0;
-	} else {
-		dev_err(madera->dev,
-				"No suitable compressed stream for DAI '%s'\n",
-				rtd->codec_dai->name);
-		return -EINVAL;
-	}
-
-	return wm_adsp_compr_open(&priv->adsp[n_adsp], stream);
-}
-
-static irqreturn_t cs47l92_adsp2_irq(int irq, void *data)
-{
-	struct cs47l92 *cs47l92 = data;
-	struct madera_priv *priv = &cs47l92->core;
-	struct madera *madera = priv->madera;
-	int ret;
-
-	ret = wm_adsp_compr_handle_irq(&priv->adsp[0]);
-	if (ret == -ENODEV) {
-		dev_err(madera->dev, "Spurious compressed data IRQ\n");
-		return IRQ_NONE;
-	}
+	dev_dbg(madera->dev, "Boot done\n");
 
 	return IRQ_HANDLED;
 }
@@ -1936,8 +1840,45 @@ static irqreturn_t cs47l92_adsp2_irq(int irq, void *data)
 static irqreturn_t cs47l92_dsp_bus_error(int irq, void *data)
 {
 	struct wm_adsp *adsp = (struct wm_adsp *)data;
+	struct snd_soc_codec *codec = adsp->codec;
+	struct cs47l92 *cs47l92 = snd_soc_codec_get_drvdata(codec);
+	struct madera *madera = cs47l92->core.madera;
+	int ret, i;
+	unsigned int val;
 
-	return wm_adsp2_bus_error(adsp);
+	val = snd_soc_read(adsp->codec, MADERA_SOFTWARE_RESET);
+	dev_err(adsp->dev, "0x%x: 0x%x\n", MADERA_SOFTWARE_RESET, val);
+	val = snd_soc_read(adsp->codec, MADERA_HARDWARE_REVISION);
+	dev_err(adsp->dev, "0x%x: 0x%x\n", MADERA_HARDWARE_REVISION, val);
+	val = snd_soc_read(adsp->codec, 0x158);
+	dev_err(adsp->dev, "0x158: 0x%x\n", val);
+	val = snd_soc_read(adsp->codec, 0x159);
+	dev_err(adsp->dev, "0x159: 0x%x\n", val);
+	val = snd_soc_read(adsp->codec, 0x15D);
+	dev_err(adsp->dev, "0x15D: 0x%x\n", val);
+	val = snd_soc_read(adsp->codec, 0x15E);
+	dev_err(adsp->dev, "0x15E: 0x%x\n", val);
+	val = snd_soc_read(adsp->codec, 0x15F);
+	dev_err(adsp->dev, "0x15F: 0x%x\n", val);
+	val = snd_soc_read(adsp->codec, 0x160);
+	dev_err(adsp->dev, "0x160: 0x%x\n", val);
+	regcache_cache_bypass(madera->regmap, true);
+	for (i = 0; i < 40; i++) {
+		val = snd_soc_read(adsp->codec, MADERA_IRQ1_MASK_1 + i);
+		dev_err(adsp->dev, "0x%x: 0x%x\n", MADERA_IRQ1_MASK_1 + i, val);
+	}
+	regcache_cache_bypass(madera->regmap, false);
+	for (i = 0; i < 40; i++) {
+		val = snd_soc_read(adsp->codec, MADERA_IRQ1_STATUS_1 + i);
+		dev_err(adsp->dev, "0x%x: 0x%x\n",
+			MADERA_IRQ1_STATUS_1 + i, val);
+	}
+
+	ret = wm_adsp2_bus_error(adsp);
+
+	madera_reboot_codec(madera);
+
+	return ret;
 }
 
 static const char * const cs47l92_dmic_refs[] = {
@@ -1978,8 +1919,6 @@ static int cs47l92_codec_probe(struct snd_soc_codec *codec)
 
 	if (!pdata->auxpdm_slave_mode)
 		val = MADERA_AUXPDM1_MSTR_MASK;
-	else
-		val = 0;
 	if (pdata->auxpdm_falling_edge)
 		val |= MADERA_AUXPDM1_TXEDGE_MASK;
 	regmap_update_bits(madera->regmap, MADERA_AUXPDM1_CTRL_0,
@@ -2005,14 +1944,6 @@ static int cs47l92_codec_probe(struct snd_soc_codec *codec)
 	if (ret)
 		return ret;
 
-	ret = madera_request_irq(madera, MADERA_IRQ_DSP_IRQ1,
-				 "ADSP2 Compressed IRQ", cs47l92_adsp2_irq,
-				 cs47l92);
-	if (ret != 0) {
-		dev_err(codec->dev, "Failed to request DSP IRQ: %d\n", ret);
-		return ret;
-	}
-
 	ret = wm_adsp2_codec_probe(&cs47l92->core.adsp[0], codec);
 	if (ret)
 		return ret;
@@ -2029,7 +1960,6 @@ static int cs47l92_codec_probe(struct snd_soc_codec *codec)
 
 	ret = madera_init_bus_error_irq(codec, 0, cs47l92_dsp_bus_error);
 	if (ret) {
-		madera_free_irq(madera, MADERA_IRQ_BOOT_DONE, madera);
 		madera_free_irq(madera, MADERA_IRQ_DSP_IRQ1, cs47l92);
 
 		wm_adsp2_codec_remove(&cs47l92->core.adsp[0], codec);
@@ -2049,7 +1979,6 @@ static int cs47l92_codec_remove(struct snd_soc_codec *codec)
 	wm_adsp2_codec_remove(&cs47l92->core.adsp[0], codec);
 	madera_destroy_bus_error_irq(codec, 0);
 
-	madera_free_irq(madera, MADERA_IRQ_BOOT_DONE, madera);
 	madera_free_irq(madera, MADERA_IRQ_DSP_IRQ1, cs47l92);
 
 	cs47l92->core.madera->dapm = NULL;
@@ -2093,20 +2022,6 @@ static struct snd_soc_codec_driver soc_codec_dev_cs47l92 = {
 	.num_dapm_widgets = ARRAY_SIZE(cs47l92_dapm_widgets),
 	.dapm_routes = cs47l92_dapm_routes,
 	.num_dapm_routes = ARRAY_SIZE(cs47l92_dapm_routes),
-};
-
-static struct snd_compr_ops cs47l92_compr_ops = {
-	.open = cs47l92_open,
-	.free = wm_adsp_compr_free,
-	.set_params = wm_adsp_compr_set_params,
-	.get_caps = wm_adsp_compr_get_caps,
-	.trigger = wm_adsp_compr_trigger,
-	.pointer = wm_adsp_compr_pointer,
-	.copy = wm_adsp_compr_copy,
-};
-
-static struct snd_soc_platform_driver cs47l92_compr_platform = {
-	.compr_ops = &cs47l92_compr_ops,
 };
 
 static int cs47l92_probe(struct platform_device *pdev)
@@ -2178,12 +2093,6 @@ static int cs47l92_probe(struct platform_device *pdev)
 
 	pm_runtime_enable(&pdev->dev);
 	pm_runtime_idle(&pdev->dev);
-
-	ret = snd_soc_register_platform(&pdev->dev, &cs47l92_compr_platform);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "Failed to register platform: %d\n", ret);
-		goto error;
-	}
 
 	ret = snd_soc_register_codec(&pdev->dev, &soc_codec_dev_cs47l92,
 				     cs47l92_dai, ARRAY_SIZE(cs47l92_dai));

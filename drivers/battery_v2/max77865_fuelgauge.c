@@ -248,8 +248,6 @@ static int max77865_fg_write_temp(struct max77865_fuelgauge_data *fuelgauge,
 		__func__, temperature, data[1], data[0]);
 
 	fuelgauge->temperature = temperature;
-	if (!fuelgauge->vempty_init_flag)
-		fuelgauge->vempty_init_flag = true;
 	return temperature;
 }
 
@@ -322,28 +320,18 @@ static int max77865_fg_read_qh_vfsoc(struct max77865_fuelgauge_data *fuelgauge)
 static int max77865_fg_read_qh(struct max77865_fuelgauge_data *fuelgauge)
 {
 	u8 data[2];
-	u32 temp, sign;
-	s32 qh;
+	int ret;
 
 	if (max77865_bulk_read(fuelgauge->i2c, QH_REG, 2, data) < 0) {
-		pr_err("%s: Failed to read QH value\n", __func__);
+		pr_err("%s: Failed to read QH_REG\n", __func__);
 		return -1;
 	}
 
-	temp = ((data[1] << 8) | data[0]) & 0xFFFF;
-	if (temp & (0x1 << 15)) {
-		sign = NEGATIVE;
-		temp = (~temp & 0xFFFF) + 1;
-	} else
-		sign = POSITIVE;
+	ret = (data[1] << 8) + data[0];
 
-	qh = temp * 1000 * fuelgauge->fg_resistor / 2;
-
-	if (sign)
-		qh *= -1;
-
-	return qh;
+	return ret * fuelgauge->fg_resistor / 2;
 }
+
 
 /* soc should be 0.1% unit */
 static int max77865_fg_read_avsoc(struct max77865_fuelgauge_data *fuelgauge)
@@ -706,8 +694,6 @@ int max77865_fg_reset_capacity_by_jig_connection(struct max77865_fuelgauge_data 
 	union power_supply_propval val;
 	val.intval = 1;
 	psy_do_property("max77865-charger", set,
-			POWER_SUPPLY_PROP_ENERGY_NOW, val);
-	psy_do_property("battery", set,
 			POWER_SUPPLY_PROP_ENERGY_NOW, val);
 	pr_info("%s: DesignCap = Capacity - 1 (Jig Connection)\n", __func__);
 
@@ -1607,7 +1593,7 @@ static int max77865_fg_get_property(struct power_supply *psy,
 			val->intval /= 10;
 
 			/* SW/HW V Empty setting */
-			if (fuelgauge->using_hw_vempty && fuelgauge->vempty_init_flag) {
+			if (fuelgauge->using_hw_vempty) {
 				if (fuelgauge->temperature <= (int)fuelgauge->low_temp_limit) {
 					if (fuelgauge->raw_capacity <= 50) {
 						if (fuelgauge->vempty_mode != VEMPTY_MODE_HW) {
@@ -1699,10 +1685,6 @@ static int max77865_fg_get_property(struct power_supply *psy,
 		val->intval = data[1] << 8 | data[0];
 		pr_debug("%s: FilterCFG=0x%04X\n", __func__, data[1] << 8 | data[0]);
 		break;
-	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
-		val->intval = (fuelgauge->battery_data->Capacity * fuelgauge->fg_resistor / 2) * fuelgauge->raw_capacity;
-		pr_info("%s: Remaining Capacity=%d uAh\n", __func__, val->intval);
-		break;
 #if defined(CONFIG_BATTERY_SBM_DATA)
 	case POWER_SUPPLY_PROP_MAX ... POWER_SUPPLY_EXT_PROP_MAX:
 		switch (ext_psp) {				
@@ -1787,16 +1769,12 @@ static int max77865_fg_set_property(struct power_supply *psy,
 
 		if (val->intval < 0 && !low_temp_wa) {
 			low_temp_wa = true;
-			max77865_write_word(fuelgauge->i2c, FILTER_CFG_REG,
-				fuelgauge->battery_data->filtercfg_low_temp);
-			pr_info("%s : FilterCFG(0x%0x)\n",
-				__func__, max77865_read_word(fuelgauge->i2c, FILTER_CFG_REG));
+			max77865_write_word(fuelgauge->i2c, 0x29, 0xCEA7);
+			pr_info("%s : FilterCFG(0x%0x)\n", __func__, max77865_read_word(fuelgauge->i2c, 0x29));
 		} else if (val->intval > 30 && low_temp_wa) {
 			low_temp_wa = false;
-			max77865_write_word(fuelgauge->i2c, FILTER_CFG_REG,
-				fuelgauge->battery_data->filtercfg);
-			pr_info("%s : FilterCFG(0x%0x)\n",
-				__func__, max77865_read_word(fuelgauge->i2c, FILTER_CFG_REG));
+			max77865_write_word(fuelgauge->i2c, 0x29, 0xCEA4);
+			pr_info("%s : FilterCFG(0x%0x)\n", __func__, max77865_read_word(fuelgauge->i2c, 0x29));
 		}
 
 		max77865_fg_write_temp(fuelgauge, val->intval);
@@ -2072,22 +2050,6 @@ static int max77865_fuelgauge_parse_dt(struct max77865_fuelgauge_data *fuelgauge
 			pr_err("%s error reading qrtabel30 %d\n",
 			       __func__, ret);
 
-		ret = of_property_read_u32(np, "fuelgauge,filtercfg",
-					   &fuelgauge->battery_data->filtercfg);
-		if (ret < 0) {
-			pr_err("%s error reading filtercfg %d\n",
-			       __func__, ret);
-			fuelgauge->battery_data->filtercfg = 0xCEA4;
-		}
-
-		ret = of_property_read_u32(np, "fuelgauge,filtercfg_low_temp",
-					   &fuelgauge->battery_data->filtercfg_low_temp);
-		if (ret < 0) {
-			pr_err("%s error reading filtercfg_low_temp %d\n",
-			       __func__, ret);
-			fuelgauge->battery_data->filtercfg_low_temp = 0xCEA7;
-		}
-
 		ret = of_property_read_u32(np, "fuelgauge,fg_resistor",
 				&fuelgauge->fg_resistor);
 		if (ret < 0) {
@@ -2210,15 +2172,13 @@ static int max77865_fuelgauge_parse_dt(struct max77865_fuelgauge_data *fuelgauge
 #endif
 
 		pr_info("%s thermal: %d, fg_irq: %d, capacity_max: %d\n"
-			"qrtable20: 0x%x, qrtable30: 0x%x, filtercfg: 0x%x, filtercfg_low_temp: 0x%x\n"
+			"qrtable20: 0x%x, qrtable30 : 0x%x\n"
 			"capacity_max_margin: %d, capacity_min: %d\n"
 			"calculation_type: 0x%x, fuel_alert_soc: %d,\n"
 			"repeated_fuelalert: %d\n",
 			__func__, pdata->thermal_source, pdata->fg_irq, pdata->capacity_max,
 			fuelgauge->battery_data->QResidual20,
 			fuelgauge->battery_data->QResidual30,
-			fuelgauge->battery_data->filtercfg,
-			fuelgauge->battery_data->filtercfg_low_temp,
 			pdata->capacity_max_margin, pdata->capacity_min,
 			pdata->capacity_calculation_type, pdata->fuel_alert_soc,
 			pdata->repeated_fuelalert);
@@ -2325,9 +2285,9 @@ static int max77865_fuelgauge_probe(struct platform_device *pdev)
 	}
 
 	/* SW/HW init code. SW/HW V Empty mode must be opposite ! */
-	fuelgauge->vempty_init_flag = false; /* default value */
+	fuelgauge->temperature = 300; /* default value */
 	pr_info("%s: SW/HW V empty init \n", __func__);
-	max77865_fg_set_vempty(fuelgauge, VEMPTY_MODE_SW);
+	max77865_fg_set_vempty(fuelgauge, VEMPTY_MODE_HW);
 
 	fuelgauge_cfg.drv_data = fuelgauge;
 

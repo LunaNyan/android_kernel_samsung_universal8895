@@ -8,8 +8,8 @@
  * published by the Free Software Foundation.
  */
 
-#ifndef EXTCON_MADERA_PDATA_H
-#define EXTCON_MADERA_PDATA_H
+#ifndef _EXTCON_MADERA_PDATA_H_
+#define _EXTCON_MADERA_PDATA_H_
 
 #include <linux/kernel.h>
 

@@ -73,8 +73,7 @@ int s5p_mfc_set_dec_codec_buffers(struct s5p_mfc_ctx *ctx)
 {
 	struct s5p_mfc_dev *dev;
 	struct s5p_mfc_dec *dec;
-	unsigned int i;
-	size_t frame_size_mv;
+	unsigned int i, frame_size_mv;
 	dma_addr_t buf_addr1;
 	int buf_size1;
 	int align_gap;
@@ -163,7 +162,7 @@ int s5p_mfc_set_dec_codec_buffers(struct s5p_mfc_ctx *ctx)
 	MFC_WRITEL(reg, S5P_FIMV_D_INIT_BUFFER_OPTIONS);
 
 	frame_size_mv = ctx->mv_size;
-	mfc_debug(2, "Frame size: %d, %d, %d, mv: %ld\n",
+	mfc_debug(2, "Frame size: %d, %d, %d, mv: %d\n",
 			raw->plane_size[0], raw->plane_size[1],
 			raw->plane_size[2], frame_size_mv);
 
@@ -321,7 +320,12 @@ int s5p_mfc_set_dec_stream_buffer(struct s5p_mfc_ctx *ctx, struct s5p_mfc_buf *m
 	MFC_WRITEL(addr, S5P_FIMV_D_CPB_BUFFER_ADDR);
 	MFC_WRITEL(cpb_buf_size, S5P_FIMV_D_CPB_BUFFER_SIZE);
 	MFC_WRITEL(start_num_byte, S5P_FIMV_D_CPB_BUFFER_OFFSET);
-	ctx->last_src_addr = addr;
+
+	if (mfc_buf)
+		MFC_TRACE_CTX("Set src[%d] fd: %d, %#llx\n",
+				mfc_buf->vb.vb2_buf.index,
+				mfc_buf->vb.vb2_buf.planes[0].m.fd,
+				addr);
 
 	mfc_debug_leave();
 	return 0;
@@ -436,13 +440,9 @@ int s5p_mfc_set_dynamic_dpb(struct s5p_mfc_ctx *ctx, struct s5p_mfc_buf *dst_mb)
 
 	for (i = 0; i < raw->num_planes; i++) {
 		MFC_WRITEL(raw->plane_size[i],
-				S5P_FIMV_D_FIRST_PLANE_DPB_SIZE + i * 4);
+				S5P_FIMV_D_FIRST_PLANE_DPB_SIZE + i*4);
 		MFC_WRITEL(dst_mb->planes.raw[i],
-				S5P_FIMV_D_FIRST_PLANE_DPB0 + (i * 0x100 + dst_index * 4));
-		if (ctx->is_10bit)
-			MFC_WRITEL(raw->plane_size_2bits[i],
-					S5P_FIMV_D_FIRST_PLANE_2BIT_DPB_SIZE + (i * 4));
-		ctx->last_dst_addr[i] = dst_mb->planes.raw[i];
+				S5P_FIMV_D_FIRST_PLANE_DPB0 + (i*0x100 + dst_index*4));
 	}
 
 	MFC_TRACE_CTX("Set dst[%d] fd: %d, %#llx / avail %#lx used %#x\n",

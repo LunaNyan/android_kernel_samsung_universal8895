@@ -122,9 +122,6 @@ struct fimc_is_queue;
 struct fimc_is_video_ctx;
 struct fimc_is_resourcemgr;
 
-/* sysfs variable for debug */
-extern struct fimc_is_sysfs_debug sysfs_debug;
-
 enum fimc_is_video_dev_num {
 	FIMC_IS_VIDEO_SS0_NUM = 1,
 	FIMC_IS_VIDEO_SS1_NUM,

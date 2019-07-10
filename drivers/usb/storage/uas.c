@@ -811,7 +811,6 @@ static int uas_slave_configure(struct scsi_device *sdev)
 	if (devinfo->flags & US_FL_BROKEN_FUA)
 		sdev->broken_fua = 1;
 
-	scsi_change_queue_depth(sdev, devinfo->qdepth - 2);
 	return 0;
 }
 
@@ -849,14 +848,14 @@ MODULE_DEVICE_TABLE(usb, uas_usb_ids);
 static int uas_switch_interface(struct usb_device *udev,
 				struct usb_interface *intf)
 {
-	struct usb_host_interface *alt;
+	int alt;
 
 	alt = uas_find_uas_alt_setting(intf);
-	if (!alt)
-		return -ENODEV;
+	if (alt < 0)
+		return alt;
 
-	return usb_set_interface(udev, alt->desc.bInterfaceNumber,
-			alt->desc.bAlternateSetting);
+	return usb_set_interface(udev,
+			intf->altsetting[0].desc.bInterfaceNumber, alt);
 }
 
 static int uas_configure_endpoints(struct uas_dev_info *devinfo)

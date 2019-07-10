@@ -524,7 +524,7 @@ int open_vctx(struct file *file,
 		goto p_err;
 	}
 
-	*vctx = vzalloc(sizeof(struct fimc_is_video_ctx));
+	*vctx = kzalloc(sizeof(struct fimc_is_video_ctx), GFP_KERNEL);
 	if (*vctx == NULL) {
 		err("kzalloc is fail");
 		ret = -ENOMEM;
@@ -548,7 +548,7 @@ int close_vctx(struct file *file,
 {
 	int ret = 0;
 
-	vfree(vctx);
+	kfree(vctx);
 	file->private_data = NULL;
 	ret = vref_put(video, NULL);
 
@@ -1381,11 +1381,6 @@ int fimc_is_video_dqbuf(struct fimc_is_video_ctx *vctx,
 	ret = vb2_dqbuf(queue->vbq, buf, blocking);
 	if (ret) {
 		mverr("vb2_dqbuf is fail(%d)", vctx,  video, ret);
-		if (test_bit(FIMC_IS_HAL_DEBUG_SUDDEN_DEAD_DETECT, &sysfs_debug.hal_debug_mode) &&
-				ret == -ERESTARTSYS) {
-			msleep(sysfs_debug.hal_debug_delay);
-			panic("HAL dead");
-		}
 		goto p_err;
 	}
 
@@ -1425,26 +1420,12 @@ int fimc_is_video_prepare(struct file *file,
 	pipe = &device->pipe;
 
 	if ((pipe->dst) && (pipe->dst->leader.vid == video->id)) {
-		if (index >=  FIMC_IS_MAX_BUFS) {
-			mverr("The leader index(%d) is bigger than array size(%d)",
-				vctx, video, index, FIMC_IS_MAX_BUFS);
-			ret = -EINVAL;
-			goto p_err;
-		}
-
 		/* Destination */
 		memcpy(&pipe->buf[PIPE_SLOT_DST][index], buf, sizeof(struct v4l2_buffer));
 		memcpy(pipe->planes[PIPE_SLOT_DST][index], buf->m.planes, sizeof(struct v4l2_plane) * buf->length);
 		pipe->buf[PIPE_SLOT_DST][index].m.planes = (struct v4l2_plane *)pipe->planes[PIPE_SLOT_DST][index];
 	} else if ((pipe->dst) && (pipe->vctx[PIPE_SLOT_JUNCTION]) &&
 			(pipe->vctx[PIPE_SLOT_JUNCTION]->video->id == video->id)) {
-		if (index >=  FIMC_IS_MAX_BUFS) {
-			mverr("The junction index(%d) is bigger than array size(%d)",
-				vctx, video, index, FIMC_IS_MAX_BUFS);
-			ret = -EINVAL;
-			goto p_err;
-		}
-
 		/* Junction */
 		if ((pipe->dst) && test_bit(FIMC_IS_GROUP_PIPE_INPUT, &pipe->dst->state)) {
 			memcpy(&pipe->buf[PIPE_SLOT_JUNCTION][index], buf, sizeof(struct v4l2_buffer));

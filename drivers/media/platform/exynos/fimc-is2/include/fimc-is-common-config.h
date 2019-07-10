@@ -70,15 +70,6 @@
 #define ENABLE_FW_SHARE_DUMP
 #endif
 
-#ifdef USE_FACE_UNLOCK_AE_AWB_INIT
-/* Init AWB */
-#define ENABLE_INIT_AWB
-#define WB_GAIN_COUNT	(4)
-#define INIT_AWB_COUNT_REAR	(3)
-#define INIT_AWB_COUNT_FRONT	(7)
-#define USE_FACE_UNLOCK_AE_AWB_INIT
-#endif
-
 /* notifier for MIF throttling */
 #undef CONFIG_CPU_THERMAL_IPA
 #if defined(CONFIG_CPU_THERMAL_IPA)
@@ -130,7 +121,6 @@
 /* #define DBG_DRAW_DIGIT */
 /* #define DBG_IMAGE_DUMP */
 /* #define DBG_META_DUMP */
-#define DBG_HAL_DEAD_PANIC_DELAY (500) /* ms */
 #define DBG_DMA_DUMP_PATH	"/data"
 #define DBG_DMA_DUMP_INTEVAL	33	/* unit : frame */
 #define DBG_DMA_DUMP_VID_COND(vid)	((vid == FIMC_IS_VIDEO_SS0_NUM) || \
